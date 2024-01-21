@@ -27,7 +27,7 @@
 
 #define TIMECODER_CHANNELS 2
 
-typedef unsigned int bits_t;
+typedef unsigned __int128 bits_t;
 
 struct timecode_def {
     const char *name, *desc;
