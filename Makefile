@@ -54,6 +54,7 @@ OBJS = controller.o \
 	dummy.o \
 	excrate.o \
 	external.o \
+	filters.o \
 	index.o \
 	interface.o \
 	library.o \
@@ -176,7 +177,7 @@ tests/observer:	tests/observer.o
 
 tests/status:	tests/status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o
+tests/timecoder:	tests/timecoder.o lut.o timecoder.o filters.o
 
 tests/track:	tests/track.o excrate.o external.o index.o library.o rig.o status.o thread.o track.o
 tests/track:	LDFLAGS += -pthread
