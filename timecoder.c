@@ -30,6 +30,7 @@
  *
  */
 
+#include "filters.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
@@ -541,8 +542,19 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
-    detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
-    detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
+    double alpha = 0.3;
+    int primary_deriv;
+    int secondary_deriv;
+
+    if (tc->def->flags & OFFSET_MODULATION) {
+        primary_deriv = discrete_derivative(ema(primary, &ema_primary_old, alpha), &primary_old);
+        secondary_deriv = discrete_derivative(ema(secondary, &ema_secondary_old, alpha), &secondary_old);
+        detect_zero_crossing(&tc->primary, primary_deriv, tc->zero_alpha, tc->threshold);
+        detect_zero_crossing(&tc->secondary, secondary_deriv, tc->zero_alpha, tc->threshold);
+    } else {
+        detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
+        detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
+    }
 
     /* If an axis has been crossed, use the direction of the crossing
      * to work out the direction of the vinyl */
@@ -636,7 +648,7 @@ void timecoder_cycle_definition(struct timecoder *tc)
 void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
 {
     while (npcm--) {
-	signed int left, right, primary, secondary;
+        signed int left, right, primary, secondary;
 
         left = pcm[0] << 16;
         right = pcm[1] << 16;
@@ -649,8 +661,15 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
             secondary = left;
         }
 
-	process_sample(tc, primary, secondary);
-        update_monitor(tc, left, right);
+        process_sample(tc, primary, secondary);
+
+        if (tc->def->flags & OFFSET_MODULATION) {
+            int mon_left = discrete_derivative(left, &left_old);
+            int mon_right = discrete_derivative(right, &right_old);
+            update_monitor(tc, mon_left * 1.25, mon_right * 1.25);
+        } else {
+            update_monitor(tc, left, right);
+        }
 
         pcm += TIMECODER_CHANNELS;
     }
