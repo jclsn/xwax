@@ -45,6 +45,12 @@ CFLAGS += -Wall
 CPPFLAGS += -MMD -MP
 LDFLAGS ?= -O3
 
+# Add debug symbols from command line
+DEBUG ?= 0
+ifeq ($(DEBUG), 1)    
+	CFLAGS += -g
+endif
+
 # Core objects and libraries
 
 OBJS = controller.o \
