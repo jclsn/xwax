@@ -224,12 +224,11 @@ static inline bits_t lfsr(bits_t code, bits_t taps)
 
 static inline bits_t fwd(bits_t current, struct timecode_def *def)
 {
-    bits_t l;
-
     /* New bits are added at the MSB; shift right by one */
 
+    bits_t l;
     l = lfsr(current, def->taps | 0x1);
-    return (current >> 1) | (l << (def->bits - 1));
+    return (current >> 0x1) | (l << (def->bits - 0x1));
 }
 
 /*
@@ -239,12 +238,15 @@ static inline bits_t fwd(bits_t current, struct timecode_def *def)
 static inline bits_t rev(bits_t current, struct timecode_def *def)
 {
     bits_t l, mask;
+    bits_t one = 1;
+    bits_t taps_shifted = def->taps >> one;
+    bits_t bits_shifted = (one << (def->bits - one));
 
     /* New bits are added at the LSB; shift left one and mask */
 
-    mask = (1 << def->bits) - 1;
-    l = lfsr(current, (def->taps >> 1) | (0x1 << (def->bits - 1)));
-    return ((current << 1) & mask) | l;
+    mask = (one << def->bits) - one;
+    l = lfsr(current, taps_shifted | bits_shifted);
+    return ((current << one) & mask) | l;
 }
 
 /*
@@ -273,7 +275,7 @@ static int build_lookup(struct timecode_def *def)
         bits_t next;
 
         /* timecode must not wrap */
-        assert(lut_lookup(&def->lut, current) == (unsigned)-1);
+        assert(lut_lookup(&def->lut, current) == (unsigned __int128)-1);
         lut_push(&def->lut, current);
 
         /* check symmetry of the lfsr functions */

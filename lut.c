@@ -91,7 +91,7 @@ void lut_push(struct lut *lut, unsigned int timecode)
 }
 
 
-unsigned __int128 lut_lookup(struct lut *lut, unsigned int timecode)
+unsigned __int128 lut_lookup(struct lut *lut, unsigned __int128 timecode)
 {
     unsigned int hash;
     slot_no_t slot_no;
@@ -107,5 +107,5 @@ unsigned __int128 lut_lookup(struct lut *lut, unsigned int timecode)
         slot_no = slot->next;
     }
 
-    return (unsigned)-1;
+    return (unsigned __int128)-1;
 }
