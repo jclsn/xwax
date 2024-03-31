@@ -91,7 +91,7 @@ void lut_push(struct lut *lut, unsigned int timecode)
 }
 
 
-unsigned int lut_lookup(struct lut *lut, unsigned int timecode)
+unsigned __int128 lut_lookup(struct lut *lut, unsigned int timecode)
 {
     unsigned int hash;
     slot_no_t slot_no;

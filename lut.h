@@ -37,6 +37,6 @@ int lut_init(struct lut *lut, int nslots);
 void lut_clear(struct lut *lut);
 
 void lut_push(struct lut *lut, unsigned int timecode);
-unsigned int lut_lookup(struct lut *lut, unsigned int timecode);
+unsigned __int128 lut_lookup(struct lut *lut, unsigned int timecode);
 
 #endif

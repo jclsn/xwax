@@ -28,7 +28,16 @@
 
 #define TIMECODER_CHANNELS 2
 
-typedef unsigned __int128 bits_t;
+/*
+ * Use new C23 _BitInt type as fallback to ensure compatibility even on
+ * 32-bit devices
+ */
+
+#if defined(__SIZEOF_INT128__)
+    typedef unsigned __int128 bits_t;
+#else
+    typedef unsigned _BitInt(128) bits_t;
+#endif
 
 struct timecode_def {
     const char *name, *desc;
