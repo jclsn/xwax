@@ -25,6 +25,7 @@
 
 #include "lut.h"
 #include "pitch.h"
+#include "delayline.h"
 
 #define TIMECODER_CHANNELS 2
 
@@ -86,6 +87,9 @@ struct timecoder {
 
     unsigned char *mon; /* x-y array */
     int mon_size, mon_counter;
+
+    /* Delaylines for the two channels and enevelope heights*/
+    struct delayline primary_delayline, secondary_delayline, envelope_heights;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
