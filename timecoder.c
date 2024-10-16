@@ -58,6 +58,7 @@
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
+#define VALID_BITS_TRAKTOR_MK2 1
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -710,8 +711,13 @@ signed int timecoder_get_position(struct timecoder *tc, double *when)
 {
     signed int r;
 
-    if (tc->valid_counter <= VALID_BITS)
-        return -1;
+    if (tc->def->flags & OFFSET_MODULATION) {
+        if (tc->valid_counter < VALID_BITS_TRAKTOR_MK2)
+            return -1;
+    } else {
+        if (tc->valid_counter <= VALID_BITS)
+            return -1;
+    }
 
     r = lut_lookup(&tc->def->lut, tc->bitstream);
     if (r == -1)
