@@ -465,7 +465,7 @@ static void update_monitor(struct timecoder *tc, signed int x, signed int y)
     size = tc->mon_size;
     ref = tc->ref_level;
 
-    /* Decay the pixels already in the montior */
+    /* Decay the pixels already in the monitor */
 
     if (++tc->mon_counter % MONITOR_DECAY_EVERY == 0) {
         int p;
@@ -696,9 +696,9 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
 }
 
 /*
- * Get the last-known position of the timecode
+ * Get the last known position of the timecode
  *
- * If now data is available or if too few bits have been error
+ * If no data is available or if too few bits have been error
  * checked, then this counts as invalid. The last known position is
  * given along with the time elapsed since the position stamp was
  * read.
