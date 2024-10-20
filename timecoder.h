@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 #include "lut.h"
 #include "pitch.h"
@@ -90,6 +91,10 @@ struct timecoder {
 
     /* Delaylines for the two channels and enevelope heights*/
     struct delayline primary_delayline, secondary_delayline, envelope_heights;
+
+    /* Upper and lower readings to detect the envelope height */
+    signed int lower_reading, upper_reading;
+    unsigned short avg_envelope_height, offset;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
@@ -153,6 +158,22 @@ static inline double timecoder_get_resolution(struct timecoder *tc)
 static inline double timecoder_revs_per_sec(struct timecoder *tc)
 {
     return (33.0 + 1.0 / 3) * tc->speed / 60;
+}
+
+static inline unsigned int envelope_height(signed int lower_reading, signed int upper_reading)
+{
+    return abs(lower_reading) + abs(upper_reading);
+}
+
+static inline unsigned int avg_envelope_height(struct delayline *delayline)
+{
+    int i;
+    unsigned int = 0;
+
+    for (i = 0; i < delayline->size; i++)
+        sum += delayline->array[i];
+
+    return (sum / delayline->size);
 }
 
 #endif
