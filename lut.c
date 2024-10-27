@@ -26,7 +26,6 @@
  * of the hash lookup table, and hence the amount of chaining */
 
 #define HASH_BITS 16
-
 #define HASH(timecode) ((timecode) & ((1 << HASH_BITS) - 1))
 #define NO_SLOT ((unsigned)-1)
 
@@ -74,7 +73,7 @@ void lut_clear(struct lut *lut)
 }
 
 
-void lut_push(struct lut *lut, unsigned int timecode)
+void lut_push(struct lut *lut, bits_t timecode)
 {
     unsigned int hash;
     slot_no_t slot_no;
@@ -90,8 +89,7 @@ void lut_push(struct lut *lut, unsigned int timecode)
     lut->table[hash] = slot_no;
 }
 
-
-unsigned __int128 lut_lookup(struct lut *lut, unsigned __int128 timecode)
+bits_t lut_lookup(struct lut *lut, bits_t timecode)
 {
     unsigned int hash;
     slot_no_t slot_no;
@@ -102,10 +100,16 @@ unsigned __int128 lut_lookup(struct lut *lut, unsigned __int128 timecode)
 
     while (slot_no != NO_SLOT) {
         slot = &lut->slot[slot_no];
-        if (slot->timecode == timecode)
+        if (slot->timecode == timecode) {
+            /* 
+             * Uncomment to print a confirmation when the LFSR state was found in the LUT 
+             */
+            /* printf("Found in LUT!\n\n"); */
             return slot_no;
+        } 
+
         slot_no = slot->next;
     }
 
-    return (unsigned __int128)-1;
+    return (bits_t)-1;
 }

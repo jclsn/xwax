@@ -55,6 +55,7 @@ endif
 
 OBJS = controller.o \
 	cues.o \
+	delayline.o \
 	deck.o \
 	device.o \
 	dummy.o \
@@ -183,7 +184,7 @@ tests/observer:	tests/observer.o
 
 tests/status:	tests/status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o filters.o
+tests/timecoder:	tests/timecoder.o lut.o timecoder.o filters.o delayline.o
 tests/timecoder:	LDFLAGS += -lm
 tests/timecoder:	LDLIBS += -lm
 

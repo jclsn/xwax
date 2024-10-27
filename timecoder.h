@@ -30,16 +30,23 @@
 
 #define TIMECODER_CHANNELS 2
 
-/*
- * Use new C23 _BitInt type as fallback to ensure compatibility even on
- * 32-bit devices
- */
+struct mk2_taps {
+    unsigned short fwd[5];
+    unsigned short rev[5];
+};
 
-#if defined(__SIZEOF_INT128__)
-    typedef unsigned __int128 bits_t;
-#else
-    typedef unsigned _BitInt(128) bits_t;
-#endif
+struct lfsr {
+        /* LFSR states */
+        bits_t current;
+        bits_t next;
+        bits_t last;
+
+        /* LFSR definition */
+        bits_t seed;
+        bits_t taps;
+        bits_t bits;
+        unsigned cycles;
+};
 
 struct timecode_def {
     const char *name, *desc;
@@ -48,10 +55,13 @@ struct timecode_def {
         flags;
     bits_t seed, /* LFSR value at timecode zero */
         taps; /* central LFSR taps, excluding end taps */
+    bits_t seed2, taps2;
     unsigned int length, /* in cycles */
         safe; /* last 'safe' timecode number (for auto disconnect) */
     bool lookup; /* true if lut has been generated */
     struct lut lut;
+    struct mk2_taps mk2_taps;
+    struct lfsr lfsr1, lfsr2;
 };
 
 struct timecoder_channel {
@@ -59,6 +69,16 @@ struct timecoder_channel {
 	swapped; /* wave recently swapped polarity */
     signed int zero;
     unsigned int crossing_ticker; /* samples since we last crossed zero */
+
+    /* For MK2 demodulation */
+    int last_upper_reading, last_lower_reading;
+    int jump_upper, jump_lower;
+    int lower_reading, upper_reading;
+    struct delayline delayline;
+    struct delayline envelope_heights;
+
+    unsigned int avg_envelope_height, offset_threshold;
+    int ref_level;
 };
 
 struct timecoder {
@@ -89,12 +109,12 @@ struct timecoder {
     unsigned char *mon; /* x-y array */
     int mon_size, mon_counter;
 
-    /* Delaylines for the two channels and enevelope heights*/
-    struct delayline primary_delayline, secondary_delayline, envelope_heights;
+    /* Last reading level to compare the current to using the MK_OFFSET_FACTOR */
+    bits_t lower_bit, upper_bit;
 
-    /* Upper and lower readings to detect the envelope height */
-    signed int lower_reading, upper_reading;
-    unsigned short avg_envelope_height, offset;
+    int reading_type;
+
+    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
@@ -162,18 +182,14 @@ static inline double timecoder_revs_per_sec(struct timecoder *tc)
 
 static inline unsigned int envelope_height(signed int lower_reading, signed int upper_reading)
 {
-    return abs(lower_reading) + abs(upper_reading);
-}
+    unsigned int envelope = 0;
 
-static inline unsigned int avg_envelope_height(struct delayline *delayline)
-{
-    int i;
-    unsigned int = 0;
+    if (upper_reading > 0 && lower_reading < 0)
+        envelope =  (abs(upper_reading) + abs(lower_reading));
+    if (upper_reading > 0 && lower_reading > 0)
+        envelope =  (abs(upper_reading) - abs(lower_reading));
 
-    for (i = 0; i < delayline->size; i++)
-        sum += delayline->array[i];
-
-    return (sum / delayline->size);
+    return envelope;
 }
 
 #endif

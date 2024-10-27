@@ -56,19 +56,19 @@ void delayline_push(struct delayline *delayline, int sample)
 	delayline->array[delayline->current] = sample;
 }
 
-int delayline_avg(struct delayline *delayline)
+unsigned int delayline_avg(struct delayline *delayline)
 {
 	if (!delayline) {
 		printf("%s: Null pointer exception\n", __func__);
 		return -EINVAL;
 	}
 
-	int sum = 0;
+	unsigned long sum = 0;
 
-	for (int i = 0; i < delayline->size; i++)
+	for (int i = 0; i < delayline->size; i++) 
 		sum += delayline->array[i];
 
-	return (sum / delayline->size);
+	return (unsigned int) (sum / delayline->size);
 }
 
 /* Prints the circular buffer starting at the current read pointer  */

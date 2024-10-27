@@ -30,7 +30,6 @@
  *
  */
 
-#include "filters.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
@@ -39,10 +38,41 @@
 #include <unistd.h>
 
 #include "debug.h"
+#include "delayline.h"
+#include "filters.h"
+#include "lut.h"
 #include "timecoder.h"
 
+/*
+ * Uncomment to use the plotting script 
+ */
+
+/* #define MK2_PLOT */
+
+#ifdef MK2_PLOT
+#include <sys/stat.h>
+struct channel {
+    int value;
+    int deriv;
+    int upper_reading;
+    int lower_reading;
+    int reflevel;
+};
+
+struct mk2_signal {
+    struct channel primary;
+    struct channel secondary;
+    int timecode;
+    int plot_digit;
+    int forwards;
+};
+
+char filepath[] = "/tmp/mk2_samples.out";
+FILE *fp = NULL;
+struct mk2_signal mk2_signal = {};
+#endif
+
 #define ZERO_THRESHOLD (128 << 16)
-#define UINT128(hi, lo) (((__uint128_t) (hi)) << 64 | (lo))
 
 #define ZERO_RC 0.001 /* time constant for zero/rumble filter */
 
@@ -52,13 +82,15 @@
  * offset modulation */
 
 #define MK2_OFFSET_FACTOR 3.75
+#define FILTER_DELAY 3
+#define NO_SLOT ((unsigned)-1)
 
 /* The number of correct bits which come in before the timecode is
  * declared valid. Set this too low, and risk the record skipping
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 1
+#define VALID_BITS_TRAKTOR_MK2 5
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -131,7 +163,8 @@ static struct timecode_def timecodes[] = {
         .resolution = 2500,
         .flags = OFFSET_MODULATION,
         .bits = 110,
-        .seed = UINT128(0x3f83fc1fc030, 0xc63f801ff8c7f07),
+        .seed = UINT128(0xff39f18fe3e, 0xc001f39fe039f1f),
+        .seed2 = UINT128(0xfe31f39fe7c, 0x1c003e31fc031f3f),
         .taps = UINT128(0x400000000040, 0x0000010800000001),
         .length = 1500000,
         .safe = 1520000,
@@ -422,6 +455,70 @@ out:
     return r;
 }
 
+void print_seed(bits_t code)
+{
+    unsigned long long low = (unsigned long long) code;
+    unsigned long long high = (unsigned long long) (code >> 64);
+    printf(".seed = UINT128(0x%llx, 0x%llx),\n", high, low);
+}
+
+void print_uint128(bits_t code)
+{
+    unsigned long long low = (unsigned long long) code;
+    unsigned long long high = (unsigned long long) (code >> 64);
+    printf("0x%llx%llx\n", high, low);
+}
+
+void print_state_binary(bits_t state, unsigned bits) {
+        for (int i = bits-1; i >= 0; i--)
+            printf("%u", (unsigned) (state >> i) & 0x1);
+    printf("\n");
+}
+
+void print_bit(bits_t state, unsigned bits)
+{
+	printf("%u", (unsigned)(state >> (bits - 1) & 0x1));
+}
+
+static inline bits_t lfsr_mk2(bits_t code, unsigned short mk2_taps[5])
+{
+	bits_t xrs;
+	xrs = 0;
+
+	for (int i = 0; i < 5; i++) {
+		code >>= mk2_taps[i];
+		xrs += code & 0x1;
+	}
+
+	return xrs & 1;
+}
+
+
+static inline bits_t fwd_mk2(bits_t current, struct timecode_def *def)
+{
+	bits_t l;
+	l = lfsr_mk2(current, def->mk2_taps.fwd);
+	return (current >> 1) | (l << (def->bits - 1));
+}
+
+
+static inline bits_t rev_mk2(bits_t current, struct timecode_def *def)
+{
+    bits_t l, mask;
+    bits_t one = 1;
+
+    mask = (one << def->bits) - one;
+    l = lfsr_mk2(current, def->mk2_taps.rev);
+    return ((current << one) & mask) | l;
+}
+
+bits_t stable_gold_code(bits_t lfsr1, bits_t lfsr2) {                                                                     
+    bits_t xor_code = lfsr1 ^ lfsr2;
+    bits_t flipped_xor_code = ~xor_code; // Inverted version
+
+    return (xor_code < flipped_xor_code) ? xor_code : flipped_xor_code;
+}
+
 /*
  * Where necessary, build the lookup table required for this timecode
  *
@@ -431,7 +528,7 @@ out:
 static int build_lookup(struct timecode_def *def)
 {
     unsigned int n;
-    bits_t current;
+    bits_t current, current2;
 
     if (def->lookup)
         return 0;
@@ -443,19 +540,25 @@ static int build_lookup(struct timecode_def *def)
 	return -1;
 
     current = def->seed;
-
+    current2 = def->seed2;
     for (n = 0; n < def->length; n++) {
-        bits_t next;
+        bits_t next, next2;
 
         /* timecode must not wrap */
-        assert(lut_lookup(&def->lut, current) == (unsigned __int128)-1);
-        lut_push(&def->lut, current);
+        assert(lut_lookup(&def->lut, current) == (bits_t)-1);
+        bits_t stable = stable_gold_code(current, current2);
+        /* print_state_binary(stable, 110); */
+        lut_push(&def->lut, stable);
+        /* lut_push(&def->lut, current ^ current2); */
 
-        /* check symmetry of the lfsr functions */
         next = fwd(current, def);
         assert(rev(next, def) == current);
 
+        next2 = fwd(current2, def);
+        assert(rev(next2, def) == current2);
+
         current = next;
+        current2 = next2;
     }
 
     def->lookup = true;
@@ -469,6 +572,7 @@ static int build_lookup(struct timecode_def *def)
  * Return: pointer to timecode definition, or NULL if not available
  */
 
+bits_t new_seed;
 struct timecode_def* timecoder_find_definition(const char *name)
 {
     unsigned int n;
@@ -478,6 +582,15 @@ struct timecode_def* timecoder_find_definition(const char *name)
 
         if (strcmp(def->name, name) != 0)
             continue;
+
+        bits_t current = def->seed;
+       new_seed = current;
+
+        for (n = 0; n < 20000; n++)
+            new_seed = fwd(new_seed, def);
+
+        /* print_seed(def->seed); */
+        /* print_seed(new_seed); */
 
         if (!lut_load(def))
             return def;
@@ -516,10 +629,16 @@ void timecoder_free_lookup(void) {
  * Initialise filter values for one channel
  */
 
-static void init_channel(struct timecoder_channel *ch)
+static void init_channel(struct timecoder *tc, struct timecoder_channel *ch)
 {
     ch->positive = false;
     ch->zero = 0;
+
+    if (tc->def->flags & OFFSET_MODULATION) {
+        delayline_init(&ch->delayline);
+        delayline_init(&ch->envelope_heights);
+        ch->ref_level = 0;
+    }
 }
 
 /*
@@ -547,8 +666,8 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
         tc->threshold >>= 5; /* approx -36dB */
 
     tc->forwards = 1;
-    init_channel(&tc->primary);
-    init_channel(&tc->secondary);
+    init_channel(tc, &tc->primary);
+    init_channel(tc, &tc->secondary);
     pitch_init(&tc->pitch, tc->dt);
 
     tc->ref_level = INT_MAX;
@@ -558,6 +677,21 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->timecode_ticker = 0;
 
     tc->mon = NULL;
+
+    #ifdef MK2_PLOT
+    int r;
+    printf("Waiting for plotting program to read from the named pipe\n");
+    r = mkfifo(filepath, 0666);
+    if (r) {
+            perror("mkfifo");
+    }
+
+    fp = fopen(filepath, "a");
+    if (!fp) {
+            perror("fopen");
+            exit(-1);
+    }
+#endif
 }
 
 /*
@@ -665,6 +799,254 @@ static void update_monitor(struct timecoder *tc, signed int x, signed int y)
 }
 
 /*
+ * Detect if the Traktor MK2 signal offset jumped up or down
+ */
+#define NO_JUMP     0
+#define JUMPED_UP   1
+#define JUMPED_DOWN 2
+#define UPPER_READING 0
+#define LOWER_READING 1
+static int detect_offset_jump(int reading, int last_reading, int threshold, int reading_type)
+{
+    /* Calculate the slope */
+    int slope = reading - last_reading;
+
+    /* Define jump constraints */
+    if (reading_type == UPPER_READING) {
+        if (slope > threshold && reading > threshold * 2)
+            return JUMPED_UP;
+        else if (slope < -threshold && (reading < threshold * 2 || reading < 0) )
+            return JUMPED_DOWN;
+        else
+            return NO_JUMP;
+    } else {
+        if (slope > threshold && (reading > -threshold * 2 || reading > 0) )
+            return JUMPED_UP;
+        else if (slope < -threshold && reading < threshold * 2)
+            return JUMPED_DOWN;
+        else
+            return NO_JUMP;
+    }
+}
+
+// Print a uint128 value in binary format.
+void bits_t_print_binary(bits_t a) {
+        for (int i = 109; i >= 0; i--) 
+            printf("%u", (unsigned) (a >> i) & 0x1);
+    printf("\n");
+}
+
+/*
+ * Extract the bitstream from the sample value
+ */
+static void process_mk2_bitstream(struct timecoder *tc, signed int reading)
+{
+    /* 
+     * Work out envelope height for both channels:
+     *
+     * The envelope height is the distance from the highest to lowest peak of the signal.
+     * Since the signal jumps up and down the ref_level can't be used here.
+     * If the signal jumps up envelope_height / MK2_OFFSET factor, a jump up is detected
+     * and vice versa for the jump down.
+     */
+
+    if (tc->primary.swapped && !tc->primary.positive) {
+        tc->primary.upper_reading = reading;
+#ifdef MK2_PLOT
+        mk2_signal.primary.reflevel = tc->primary.ref_level;
+        if (tc->forwards)
+            mk2_signal.primary.upper_reading = tc->primary.upper_reading;
+#endif
+    } else if (tc->primary.swapped && tc->primary.positive) {
+        tc->primary.lower_reading = reading;
+
+        delayline_push(&tc->primary.envelope_heights, envelope_height(tc->primary.lower_reading, tc->primary.upper_reading));
+        tc->primary.avg_envelope_height = delayline_avg(&tc->primary.envelope_heights);
+        tc->primary.offset_threshold = tc->primary.avg_envelope_height / MK2_OFFSET_FACTOR;
+#ifdef MK2_PLOT
+        mk2_signal.primary.reflevel = tc->primary.ref_level;
+        if (tc->forwards)
+            mk2_signal.primary.lower_reading = tc->primary.lower_reading;
+#endif
+    } else if (tc->secondary.swapped && !tc->secondary.positive) {
+        tc->secondary.upper_reading = reading;
+#ifdef MK2_PLOT
+        mk2_signal.secondary.reflevel = tc->secondary.ref_level;
+        if (!tc->forwards)
+            mk2_signal.secondary.upper_reading = tc->secondary.upper_reading;
+#endif
+    } else if (tc->secondary.swapped && tc->secondary.positive) {
+        tc->secondary.lower_reading = reading;
+
+        delayline_push(&tc->secondary.envelope_heights, envelope_height(tc->secondary.lower_reading, tc->secondary.upper_reading));
+        tc->secondary.avg_envelope_height = delayline_avg(&tc->secondary.envelope_heights);
+        tc->secondary.offset_threshold = tc->secondary.avg_envelope_height / MK2_OFFSET_FACTOR;
+#ifdef MK2_PLOT
+        mk2_signal.secondary.reflevel = tc->secondary.ref_level;
+        if (!tc->forwards)
+            mk2_signal.secondary.lower_reading = tc->secondary.lower_reading;
+#endif
+    }
+
+    int primary_reading;
+    int secondary_reading;
+    struct timecoder_channel *primary;
+    struct timecoder_channel *secondary;
+
+    if (tc->forwards) {
+        primary = &tc->primary;
+        secondary = &tc->secondary;
+    } else {
+        primary = &tc->secondary;
+        secondary = &tc->primary;
+    }
+
+    /* 
+     * Due to the delay of the derivative and moving average filter, the third sample after
+     * the current sample has to be taken
+     */
+
+    primary_reading = *delayline_at_index(&primary->delayline, FILTER_DELAY);
+    secondary_reading = *delayline_at_index(&secondary->delayline, FILTER_DELAY);
+
+    /* 
+     * Detect if the offset jumps up or down on primary or secondary channel.
+     * Both channels are checked to increase accuracy
+     */
+
+    if (primary->swapped && primary->positive)  {
+	    primary->jump_lower = detect_offset_jump(primary_reading,
+						     primary->last_lower_reading,
+						     primary->offset_threshold,
+						     LOWER_READING);
+	    primary->last_lower_reading = primary_reading;
+
+	    return; 
+    } else if (primary->swapped && !primary->positive)  {
+	    primary->jump_upper = detect_offset_jump(primary_reading,
+						     primary->last_upper_reading,
+						     primary->offset_threshold,
+						     UPPER_READING);
+	    primary->last_upper_reading = primary_reading;
+
+	    return; 
+    } else if (secondary->swapped && secondary->positive)  {
+	    secondary->jump_lower = detect_offset_jump(secondary_reading,
+						       secondary->last_lower_reading,
+						       secondary->offset_threshold,
+						       LOWER_READING);
+	    secondary->last_lower_reading = secondary_reading;
+
+	    if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) {
+                    tc->upper_bit = 1;
+            } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) {
+                    tc->upper_bit = 0;
+            }
+
+            tc->reading_type = LOWER_READING;
+
+    } else if (secondary->swapped && !secondary->positive)  {
+	    secondary->jump_upper = detect_offset_jump(secondary_reading,
+						       secondary->last_upper_reading,
+						       secondary->offset_threshold,
+						       UPPER_READING);
+	    secondary->last_upper_reading = secondary_reading;
+
+	    /* 
+             * The bits only change when an offset jump occurs. Else the previous bit is taken 
+             */
+            if ((primary->jump_upper | secondary->jump_upper ) & JUMPED_UP) {
+                    tc->lower_bit = 1;
+            } else if ( ((primary->jump_upper | secondary->jump_upper) & JUMPED_DOWN )) {
+                    tc->lower_bit = 0;
+            }
+
+            tc->reading_type = UPPER_READING;
+#ifdef MK2_PLOT
+        mk2_signal.plot_digit = 1;
+#endif
+
+        /* 
+         * Uncomment to print the bitstream to stdout 
+         */
+        /* printf("%llx", (unsigned long long)(b & 0xFFFFFFFFFFFFFFFF)); */
+    } 
+
+    /* Add it to the bitstream, and work out what we were expecting
+     * (timecode). */
+
+    /* tc->bitstream is always in the order it is physically placed on
+     * the vinyl, regardless of the direction. */
+
+    if (tc->forwards) {
+        bits_t one = 1;
+
+        if (tc->reading_type == UPPER_READING) {
+            tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
+
+            tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->bits - one));
+
+            if (tc->upper_timecode != tc->upper_bitstream)
+                tc->upper_timecode = tc->upper_bitstream;
+
+
+            /* print_bit(tc->bitstream, 110); */
+	    /* print_state_binary(tc->upper_timecode, 110); */
+            /* print_state_binary(tc->upper_bitstream, 110); */
+            /* printf("\n"); */
+        } else {
+            tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
+
+            tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->bits - one));
+
+            if (tc->lower_timecode != tc->lower_bitstream)
+                tc->lower_timecode = tc->lower_bitstream;
+
+            /* print_state_binary(tc->lower_timecode, 110); */
+            /* print_state_binary(tc->lower_bitstream, 110); */
+            /* printf("\n"); */
+        }
+
+            tc->timecode = stable_gold_code(tc->upper_timecode, tc->lower_timecode);
+            tc->bitstream = stable_gold_code(tc->upper_bitstream,tc-> lower_bitstream);
+    } else {
+	bits_t mask;
+        bits_t one = 1;
+
+	mask = ((one << tc->def->bits) - one);
+
+        tc->timecode = rev(tc->timecode, tc->def);
+
+	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
+
+        /* printf("backwards:      bit: %u\n", (unsigned) b); */
+        /* bits_t_print_binary(tc->timecode); */
+        /* bits_t_print_binary(tc->bitstream); */
+    }
+
+    if (tc->reading_type == UPPER_READING) {
+        if (tc->timecode == tc->bitstream) {
+            tc->valid_counter++;
+        }
+        else {
+            tc->timecode = tc->bitstream;
+            tc->valid_counter = 0;
+        }
+    } 
+
+    /* Take note of the last time we read a valid timecode */
+
+    tc->timecode_ticker = 0;
+
+    /* Adjust the reference level based on this new peak */
+
+    signed int m = abs(reading / 2 - tc->primary.zero / 2);
+    tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
+    tc->ref_level += m / REF_PEAKS_AVG;
+}
+
+
+/*
  * Extract the bitstream from the sample value
  */
 
@@ -672,11 +1054,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 {
     bits_t b;
 
-    if(tc->def->flags & OFFSET_MODULATION) {
-        /* Todo: Detect valid bits for offset modulation here */
-    } else {
-        b = m > tc->ref_level;
-    }
+    b = m > tc->ref_level;
 
     /* Add it to the bitstream, and work out what we were expecting
      * (timecode). */
@@ -731,13 +1109,12 @@ static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
     double alpha = 0.3;
-    int primary_deriv;
-    int secondary_deriv;
+    int primary_deriv = 0;
+    int secondary_deriv = 0;
 
     /* 
      * Todo: 
      *  1. Get upper and lower reading to read the envelope height ✓
-     *  2. Create array of envelope heights and get the average
      *  3. Use envelope height + MK2_OFFSET_FACTOR to get offset
      *  4. Get timecode readings when offset changes
      */
@@ -752,22 +1129,11 @@ static void process_sample(struct timecoder *tc,
         detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
     }
 
+
     /* 
      * Get upper and lower reading to calculate the envelope height
      * Todo: Check if direction must be taken into account here
      */
-
-    if (tc->def->flags & OFFSET_MODULATION) {
-        if (tc->primary.swapped)
-            tc->upper_reading = secondary;
-
-        if (tc->secondary.swapped) {
-            tc->lower_reading = primary;
-            cbuf_push(&tc->cbuf, envelope_height(tc->lower_reading, tc->upper_reading));
-            tc->avg_envelope_height = avg_envelope_height(&tc->cbuf);
-            tc->offset = tc->avg_envelope_height * MK2_OFFSET_FACTOR;
-        }
-    }
 
     /* If an axis has been crossed, use the direction of the crossing
      * to work out the direction of the vinyl */
@@ -807,17 +1173,43 @@ static void process_sample(struct timecoder *tc,
     /* If we have crossed the primary channel in the right polarity,
      * it's time to read off a timecode 0 or 1 value */
 
-    if (tc->secondary.swapped &&
-       tc->primary.positive == ((tc->def->flags & SWITCH_POLARITY) == 0))
-    {
-        signed int m;
+#ifdef MK2_PLOT
+        mk2_signal.primary.value = *delayline_at_index(&tc->primary.delayline, FILTER_DELAY);
+        mk2_signal.secondary.value = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
+        mk2_signal.primary.deriv = primary_deriv;
+        mk2_signal.secondary.deriv = secondary_deriv;
+        mk2_signal.plot_digit = 0;
+        mk2_signal.forwards = tc->forwards;
+        mk2_signal.primary.upper_reading = 0;
+        mk2_signal.primary.lower_reading = 0;
+        mk2_signal.secondary.upper_reading = 0;
+        mk2_signal.secondary.lower_reading = 0;
+#endif
 
-        /* scale to avoid clipping */
-        m = abs(primary / 2 - tc->primary.zero / 2);
-	process_bitstream(tc, m);
-    }
+	if (tc->def->flags & OFFSET_MODULATION) {
+		if (tc->primary.swapped) {
+			signed int reading = *delayline_at_index(&tc->primary.delayline, FILTER_DELAY);
+			process_mk2_bitstream(tc, reading);
+                        
+		} else if (tc->secondary.swapped) {
+			signed int reading = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
+			process_mk2_bitstream(tc, reading);
+                }
+	} else {
+		if (tc->secondary.swapped &&
+		    tc->primary.positive == ((tc->def->flags & SWITCH_POLARITY) == 0)) {
+			signed int m;
 
-    tc->timecode_ticker++;
+			/* scale to avoid clipping */
+			m = abs(primary / 2 - tc->primary.zero / 2);
+			process_bitstream(tc, m);
+		}
+	}
+#ifdef MK2_PLOT
+        mk2_signal.timecode = tc->current_bit;
+        fwrite(&mk2_signal, sizeof(struct mk2_signal), 1, fp);
+#endif
+	tc->timecode_ticker++;
 }
 
 /*
@@ -874,6 +1266,11 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
             secondary = left;
         }
 
+        if (tc->def->flags & OFFSET_MODULATION) {
+            delayline_push(&tc->primary.delayline, primary);
+            delayline_push(&tc->secondary.delayline, secondary);
+        }
+
         process_sample(tc, primary, secondary);
 
         if (tc->def->flags & OFFSET_MODULATION) {
@@ -909,12 +1306,14 @@ signed int timecoder_get_position(struct timecoder *tc, double *when)
             return -1;
     } else {
         if (tc->valid_counter <= VALID_BITS)
-            return -1;
+                return -1;
     }
 
     r = lut_lookup(&tc->def->lut, tc->bitstream);
-    if (r == -1)
+
+    if (r == -1) {
         return -1;
+    }
 
     if (when)
         *when = tc->timecode_ticker * tc->dt;
