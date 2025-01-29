@@ -255,6 +255,173 @@ static inline bits_t rev(bits_t current, struct timecode_def *def)
     return ((current << one) & mask) | l;
 }
 
+int lut_store(struct timecode_def *def)
+{
+    int hashes = 1 << 16;
+    const char *home;
+    ssize_t size = 1;
+    FILE *fp = NULL;
+    char *path;
+    int r = 0;
+
+    home = getenv("HOME");
+    if (!home) 
+        return -1;
+
+    int len = strlen(home) + strlen("/.lut") + strlen(def->name) + 1;
+
+    path = malloc(sizeof(char) * len + 2);
+    if (!path) {
+        perror("malloc");
+        return -1;
+    }
+    
+    size = snprintf(path, len + 2, "%s/.%s.lut", home, def->name);
+    if (size != len) {
+        perror("snprintf");
+        free(path);
+        return -1;
+    }
+
+    printf("Storing LUT at %s\n", path);
+
+    fp = fopen(path, "w");
+    if (!fp) {
+        perror("fopen");
+        free(path);
+        return -1;
+    }
+
+    int i;
+    for (i = 0; i < def->length; i++) {
+        struct slot *slot = &def->lut.slot[i];
+
+        if (!slot) {
+            printf("slot_no: %d doesn't exist'\n", i);
+            r = -1;
+            goto out;
+        }
+
+        size = fwrite(slot, sizeof(struct slot), 1, fp);
+        if(!size) {
+            perror("fwrite");
+            r = -1;
+            goto out;
+        }
+    }
+
+    int j;
+    for (j = 0; j < hashes; j++) {
+        slot_no_t *hash = &def->lut.table[j];
+
+        size = fwrite(hash, sizeof(slot_no_t), 1, fp);
+        if(!size) {
+            perror("fwrite");
+            r = -1;
+            goto out;
+        }
+    }
+
+    size = fwrite(&def->lut.avail, sizeof(slot_no_t), 1, fp);
+    if(!size) {
+        perror("fwrite");
+        r = -1;
+        goto out;
+    }
+
+    printf("Wrote %d slots and %d hashes to disk\n", i, j);
+
+out:
+    fclose(fp);
+    free(path);
+
+    return r;
+}
+
+int lut_load(struct timecode_def *def)
+{
+    int hashes = 1 << 16;
+    const char *home;
+    ssize_t size = 1;
+    char *path;
+    int r = 0;
+    FILE *fp;
+
+    home = getenv("HOME");
+
+    int len = strlen(home) + strlen("/.lut") + strlen(def->name) + 1;
+
+    path = malloc(sizeof(char) * (len + 2));
+    if (!path) {
+        perror("malloc");
+        return -1;
+    }
+
+    size = snprintf(path, len + 2, "%s/.%s.lut", home, def->name);
+    if (size != len) {
+        perror("snprintf");
+        free(path);
+        return -1;
+    }
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        perror("fopen");
+        free(path);
+        return -1;
+    }
+
+    printf("Loading LUT from %s\n", path);
+
+    r = lut_init(&def->lut, def->length);
+    if (r) {
+        printf("Couldn't initialise LUT\n");
+        goto out;
+    }
+
+    int i;
+    for (i = 0; i < def->length; i++) {
+        struct slot *slot = &def->lut.slot[i];
+
+        size = fread(slot, sizeof(struct slot), 1, fp);
+        if(!size) {
+            perror("fread");
+            r = -1;
+            goto out;
+        }
+    }
+
+    int j;
+    for (j = 0; j < hashes; j++) {
+
+        slot_no_t *hash = &def->lut.table[j]; 
+
+        size = fread(hash, sizeof(slot_no_t), 1, fp);
+        if(!size) {
+            perror("fread");
+            r = -1;
+            goto out;
+        }
+    }
+
+    size = fread(&def->lut.avail, sizeof(slot_no_t), 1, fp);
+    if(!size) {
+        perror("fwrite");
+        r = -1;
+        goto out;
+    }
+
+    printf("Loaded %d slots and %d hashes into memory\n", i, j);
+
+    def->lookup = true;
+
+out:
+    fclose(fp);
+    free(path);
+
+    return r;
+}
+
 /*
  * Where necessary, build the lookup table required for this timecode
  *
@@ -312,8 +479,17 @@ struct timecode_def* timecoder_find_definition(const char *name)
         if (strcmp(def->name, name) != 0)
             continue;
 
+        if (!lut_load(def))
+            return def;
+
         if (build_lookup(def) == -1)
             return NULL;  /* error */
+
+        if(lut_store(def)) {
+            timecoder_free_lookup();
+            printf("Couldn't store LUT on disk\n");
+            return NULL;
+        }
 
         return def;
     }
