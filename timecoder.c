@@ -774,10 +774,11 @@ static void update_monitor(struct timecoder *tc, signed int x, signed int y)
 #define JUMPED_DOWN 2
 #define UPPER_READING 0
 #define LOWER_READING 1
-static int detect_offset_jump(int reading, int last_reading, int threshold, int reading_type)
+static int detect_offset_jump(int reading, int *last_reading, int threshold, int reading_type)
 {
     /* Calculate the slope */
-    int slope = reading - last_reading;
+    int slope = reading - *last_reading;
+    *last_reading = reading;
 
     /* Define jump constraints */
     if (reading_type == UPPER_READING) {
@@ -884,26 +885,22 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading)
 
     if (primary->swapped && primary->positive)  {
 	    primary->jump_lower = detect_offset_jump(primary_reading,
-						     primary->last_lower_reading,
+						     &primary->last_lower_reading,
 						     primary->offset_threshold,
 						     LOWER_READING);
-	    primary->last_lower_reading = primary_reading;
-
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
 	    primary->jump_upper = detect_offset_jump(primary_reading,
-						     primary->last_upper_reading,
+						     &primary->last_upper_reading,
 						     primary->offset_threshold,
 						     UPPER_READING);
-	    primary->last_upper_reading = primary_reading;
 
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
 	    secondary->jump_lower = detect_offset_jump(secondary_reading,
-						       secondary->last_lower_reading,
+						       &secondary->last_lower_reading,
 						       secondary->offset_threshold,
 						       LOWER_READING);
-	    secondary->last_lower_reading = secondary_reading;
 
 	    if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) {
                     tc->upper_bit = 1;
@@ -915,10 +912,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading)
 
     } else if (secondary->swapped && !secondary->positive)  {
 	    secondary->jump_upper = detect_offset_jump(secondary_reading,
-						       secondary->last_upper_reading,
+						       &secondary->last_upper_reading,
 						       secondary->offset_threshold,
 						       UPPER_READING);
-	    secondary->last_upper_reading = secondary_reading;
 
 	    /* 
              * The bits only change when an offset jump occurs. Else the previous bit is taken 
