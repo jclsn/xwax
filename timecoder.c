@@ -480,38 +480,6 @@ void print_bit(bits_t state, unsigned bits)
 	printf("%u", (unsigned)(state >> (bits - 1) & 0x1));
 }
 
-static inline bits_t lfsr_mk2(bits_t code, unsigned short mk2_taps[5])
-{
-	bits_t xrs;
-	xrs = 0;
-
-	for (int i = 0; i < 5; i++) {
-		code >>= mk2_taps[i];
-		xrs += code & 0x1;
-	}
-
-	return xrs & 1;
-}
-
-
-static inline bits_t fwd_mk2(bits_t current, struct timecode_def *def)
-{
-	bits_t l;
-	l = lfsr_mk2(current, def->mk2_taps.fwd);
-	return (current >> 1) | (l << (def->bits - 1));
-}
-
-
-static inline bits_t rev_mk2(bits_t current, struct timecode_def *def)
-{
-    bits_t l, mask;
-    bits_t one = 1;
-
-    mask = (one << def->bits) - one;
-    l = lfsr_mk2(current, def->mk2_taps.rev);
-    return ((current << one) & mask) | l;
-}
-
 bits_t stable_gold_code(bits_t lfsr1, bits_t lfsr2) {                                                                     
     bits_t xor_code = lfsr1 ^ lfsr2;
     bits_t flipped_xor_code = ~xor_code; // Inverted version
