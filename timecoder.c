@@ -896,9 +896,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 						       LOWER_READING);
 
 	    if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) {
-                    tc->upper_bit = 1;
+                    tc->lower_bit = 1;
             } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) {
-                    tc->upper_bit = 0;
+                    tc->lower_bit = 0;
             }
 
             tc->reading_type = LOWER_READING;
@@ -910,9 +910,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 						       UPPER_READING);
             /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             if ((primary->jump_upper | secondary->jump_upper ) & JUMPED_UP) {
-                    tc->lower_bit = 1;
+                    tc->upper_bit = 1;
             } else if ( ((primary->jump_upper | secondary->jump_upper) & JUMPED_DOWN )) {
-                    tc->lower_bit = 0;
+                    tc->upper_bit = 0;
             }
 
             tc->reading_type = UPPER_READING;
