@@ -908,10 +908,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 						       &secondary->last_upper_reading,
 						       secondary->offset_threshold,
 						       UPPER_READING);
-
-	    /* 
-             * The bits only change when an offset jump occurs. Else the previous bit is taken 
-             */
+            /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             if ((primary->jump_upper | secondary->jump_upper ) & JUMPED_UP) {
                     tc->lower_bit = 1;
             } else if ( ((primary->jump_upper | secondary->jump_upper) & JUMPED_DOWN )) {
@@ -923,18 +920,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         mk2_signal.plot_digit = 1;
 #endif
 
-        /* 
-         * Uncomment to print the bitstream to stdout 
-         */
+        /* Uncomment to print the bitstream to stdout */
         /* printf("%llx", (unsigned long long)(b & 0xFFFFFFFFFFFFFFFF)); */
     } 
 
-    /* Add it to the bitstream, and work out what we were expecting
-     * (timecode). */
-
-    /* tc->bitstream is always in the order it is physically placed on
-     * the vinyl, regardless of the direction. */
-
+    /* Process the upper and lower codes */
     if (tc->forwards) {
         bits_t one = 1;
 
@@ -975,10 +965,6 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         tc->timecode = rev(tc->timecode, tc->def);
 
 	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
-
-        /* printf("backwards:      bit: %u\n", (unsigned) b); */
-        /* bits_t_print_binary(tc->timecode); */
-        /* bits_t_print_binary(tc->bitstream); */
     }
 
     if (tc->reading_type == UPPER_READING) {
@@ -995,7 +981,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     tc->timecode_ticker = 0;
 
-    /* Adjust the reference level based on this new peak */
+    /* Reference level for the monitor. Not used for MK2 timecode */
 
     signed int m = abs(reading / 2 - tc->primary.zero / 2);
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
