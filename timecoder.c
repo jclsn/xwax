@@ -798,7 +798,7 @@ void bits_t_print_binary(bits_t a) {
 /*
  * Extract the bitstream from the sample value
  */
-static void process_mk2_bitstream(struct timecoder *tc, signed int reading)
+static void get_envelope_heights(struct timecoder *tc, signed int reading)
 {
     /* 
      * Work out envelope height for both channels:
@@ -846,6 +846,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading)
             mk2_signal.secondary.lower_reading = tc->secondary.lower_reading;
 #endif
     }
+}
+
+static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     int primary_reading;
     int secondary_reading;
@@ -1143,10 +1146,12 @@ static void process_sample(struct timecoder *tc,
 	if (tc->def->flags & OFFSET_MODULATION) {
 		if (tc->primary.swapped) {
 			signed int reading = *delayline_at_index(&tc->primary.delayline, FILTER_DELAY);
+                        get_envelope_heights(tc, reading);
 			process_mk2_bitstream(tc, reading);
                         
 		} else if (tc->secondary.swapped) {
 			signed int reading = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
+                        get_envelope_heights(tc, reading);
 			process_mk2_bitstream(tc, reading);
                 }
 	} else {
