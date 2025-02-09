@@ -540,7 +540,6 @@ static int build_lookup(struct timecode_def *def)
  * Return: pointer to timecode definition, or NULL if not available
  */
 
-bits_t new_seed;
 struct timecode_def* timecoder_find_definition(const char *name)
 {
     unsigned int n;
@@ -550,15 +549,6 @@ struct timecode_def* timecoder_find_definition(const char *name)
 
         if (strcmp(def->name, name) != 0)
             continue;
-
-        bits_t current = def->seed;
-       new_seed = current;
-
-        for (n = 0; n < 20000; n++)
-            new_seed = fwd(new_seed, def);
-
-        /* print_seed(def->seed); */
-        /* print_seed(new_seed); */
 
         if (!lut_load(def))
             return def;
