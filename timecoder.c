@@ -1055,13 +1055,6 @@ static void process_sample(struct timecoder *tc,
     int primary_deriv = 0;
     int secondary_deriv = 0;
 
-    /* 
-     * Todo: 
-     *  1. Get upper and lower reading to read the envelope height ✓
-     *  3. Use envelope height + MK2_OFFSET_FACTOR to get offset
-     *  4. Get timecode readings when offset changes
-     */
-
     if (tc->def->flags & OFFSET_MODULATION) {
         primary_deriv = discrete_derivative(ema(primary, &ema_primary_old, alpha), &primary_old);
         secondary_deriv = discrete_derivative(ema(secondary, &ema_secondary_old, alpha), &secondary_old);
@@ -1071,12 +1064,6 @@ static void process_sample(struct timecoder *tc,
         detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
         detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
     }
-
-
-    /* 
-     * Get upper and lower reading to calculate the envelope height
-     * Todo: Check if direction must be taken into account here
-     */
 
     /* If an axis has been crossed, use the direction of the crossing
      * to work out the direction of the vinyl */
