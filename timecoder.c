@@ -455,11 +455,32 @@ out:
     return r;
 }
 
-bits_t stable_gold_code(bits_t lfsr1, bits_t lfsr2) {                                                                     
+// Compute Gold Code from two LFSRs
+bits_t compute_gold_code(bits_t lfsr1, bits_t lfsr2) 
+{
+    return lfsr1 ^ lfsr2;
+}
+
+// Compute Gold Code, which is the same no matter the polarity
+bits_t stable_gold_code(bits_t lfsr1, bits_t lfsr2) 
+{                                                                     
     bits_t xor_code = lfsr1 ^ lfsr2;
     bits_t flipped_xor_code = ~xor_code; // Inverted version
 
     return (xor_code < flipped_xor_code) ? xor_code : flipped_xor_code;
+}
+
+// Find positions where the Gold Code is incorrect
+bits_t find_errors(bits_t gold_code_actual, bits_t gold_code_expected) {
+    return gold_code_actual ^ gold_code_expected;
+}
+
+// Correct errors using bitwise majority voting
+bits_t correct_errors(bits_t lfsr1, bits_t lfsr2, bits_t gold_code_expected, bits_t gold_code_actual) {
+    bits_t error_mask = find_errors(gold_code_actual, gold_code_expected);
+
+    // Correct using a simple majority vote (assumes single-bit errors)
+    return (lfsr1 & ~error_mask) | (lfsr2 & error_mask);
 }
 
 /*
