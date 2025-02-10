@@ -26,6 +26,7 @@
 
 #include "lut.h"
 #include "pitch.h"
+#include "print.h"
 #include "delayline.h"
 
 #define TIMECODER_CHANNELS 2

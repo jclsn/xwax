@@ -68,6 +68,7 @@ OBJS = controller.o \
 	listbox.o \
 	lut.o \
 	player.o \
+	print.o \
 	realtime.o \
 	rig.o \
 	selector.o \

@@ -455,31 +455,6 @@ out:
     return r;
 }
 
-void print_seed(bits_t code)
-{
-    unsigned long long low = (unsigned long long) code;
-    unsigned long long high = (unsigned long long) (code >> 64);
-    printf(".seed = UINT128(0x%llx, 0x%llx),\n", high, low);
-}
-
-void print_uint128(bits_t code)
-{
-    unsigned long long low = (unsigned long long) code;
-    unsigned long long high = (unsigned long long) (code >> 64);
-    printf("0x%llx%llx\n", high, low);
-}
-
-void print_state_binary(bits_t state, unsigned bits) {
-        for (int i = bits-1; i >= 0; i--)
-            printf("%u", (unsigned) (state >> i) & 0x1);
-    printf("\n");
-}
-
-void print_bit(bits_t state, unsigned bits)
-{
-	printf("%u", (unsigned)(state >> (bits - 1) & 0x1));
-}
-
 bits_t stable_gold_code(bits_t lfsr1, bits_t lfsr2) {                                                                     
     bits_t xor_code = lfsr1 ^ lfsr2;
     bits_t flipped_xor_code = ~xor_code; // Inverted version
@@ -515,9 +490,7 @@ static int build_lookup(struct timecode_def *def)
         /* timecode must not wrap */
         assert(lut_lookup(&def->lut, current) == (bits_t)-1);
         bits_t stable = stable_gold_code(current, current2);
-        /* print_state_binary(stable, 110); */
         lut_push(&def->lut, stable);
-        /* lut_push(&def->lut, current ^ current2); */
 
         next = fwd(current, def);
         assert(rev(next, def) == current);
