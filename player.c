@@ -383,8 +383,6 @@ static void calibrate_to_timecode_position(struct player *pl)
     pl->position = pl->target_position;
 }
 
-#include "print.h"
-
 void retarget(struct player *pl)
 {
     double diff;
@@ -404,9 +402,6 @@ void retarget(struct player *pl)
 
         /* Jump the track to the time */
 
-        print_state_binary(pl->timecoder->upper_bitstream, 110);
-        print_state_binary(pl->timecoder->bitstream, 110);
-        print_state_binary(pl->timecoder->lower_bitstream, 110);
         pl->position = pl->target_position;
         fprintf(stderr, "Seek to new position %.2lfs.\n", pl->position);
 

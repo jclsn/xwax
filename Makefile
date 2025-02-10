@@ -43,7 +43,7 @@ DOCDIR ?= $(PREFIX)/share/doc
 CFLAGS ?= -O3
 CFLAGS += -Wall
 CPPFLAGS += -MMD -MP
-LDFLAGS ?= -O3
+LDFLAGS ?= -O3 -lssl -lcrypto
 
 # Add debug symbols from command line
 DEBUG ?= 0

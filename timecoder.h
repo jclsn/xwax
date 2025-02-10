@@ -26,7 +26,6 @@
 
 #include "lut.h"
 #include "pitch.h"
-#include "print.h"
 #include "delayline.h"
 
 #define TIMECODER_CHANNELS 2
@@ -100,7 +99,7 @@ struct timecoder {
     /* Numerical timecode */
 
     signed int ref_level;
-    bits_t bitstream, /* actual bits from the record */
+    bits_t bitstream, error_mask, /* actual bits from the record */
         timecode; /* corrected timecode */
     unsigned int valid_counter, /* number of successful error checks */
         timecode_ticker; /* samples since valid timecode was read */
@@ -115,7 +114,8 @@ struct timecoder {
 
     int reading_type;
 
-    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode;
+    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode; 
+    bits_t upper_corrected, lower_corrected, corrected;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);

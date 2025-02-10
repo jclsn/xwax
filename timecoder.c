@@ -42,6 +42,7 @@
 #include "filters.h"
 #include "lut.h"
 #include "timecoder.h"
+#include "print.h"
 
 /*
  * Uncomment to use the plotting script 
@@ -90,7 +91,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 5
+#define VALID_BITS_TRAKTOR_MK2 10
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -163,7 +164,9 @@ static struct timecode_def timecodes[] = {
         .resolution = 2500,
         .flags = OFFSET_MODULATION,
         .bits = 110,
-        .seed = UINT128(0x3f83fc1fc030, 0xc63f801ff8c7f07),
+        /* .seed = UINT128(0x4200040, 0x1084000000108001), */
+        .seed = UINT128(0x200000008400, 0x802108000000210),
+        /* .seed = UINT128(0x3f83fc1fc030, 0xc63f801ff8c7f07), */
         .seed2 = UINT128(0x3f83f83fc070, 0x1ce7f801ff9cff06),
         .taps = UINT128(0x400000000040, 0x0000010800000001),
         .length = 1500000,
@@ -476,9 +479,7 @@ bits_t find_errors(bits_t gold_code_actual, bits_t gold_code_expected) {
 }
 
 // Correct errors using bitwise majority voting
-bits_t correct_errors(bits_t lfsr1, bits_t lfsr2, bits_t gold_code_expected, bits_t gold_code_actual) {
-    bits_t error_mask = find_errors(gold_code_actual, gold_code_expected);
-
+bits_t correct_errors(bits_t lfsr1, bits_t lfsr2, bits_t error_mask) {
     // Correct using a simple majority vote (assumes single-bit errors)
     return (lfsr1 & ~error_mask) | (lfsr2 & error_mask);
 }
@@ -510,8 +511,12 @@ static int build_lookup(struct timecode_def *def)
 
         /* timecode must not wrap */
         assert(lut_lookup(&def->lut, current) == (bits_t)-1);
-        bits_t stable = stable_gold_code(current, current2);
-        lut_push(&def->lut, stable);
+        bits_t stable = stable_gold_code(current,  current2);
+        lut_push(&def->lut, current);
+        /* lut_push(&def->lut, stable); */
+        /* print_seed(stable); */
+        /* if (n > 20) */
+        /*     exit(0); */
 
         next = fwd(current, def);
         assert(rev(next, def) == current);
@@ -915,7 +920,6 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 #endif
 
         /* Uncomment to print the bitstream to stdout */
-        /* printf("%llx", (unsigned long long)(b & 0xFFFFFFFFFFFFFFFF)); */
     } 
 
     /* Process the upper and lower codes */
@@ -923,33 +927,50 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         bits_t one = 1;
 
         if (tc->reading_type == UPPER_READING) {
-            tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
-
             tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->bits - one));
 
-            if (tc->upper_timecode != tc->upper_bitstream)
-                tc->upper_timecode = tc->upper_bitstream;
+            tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
+            tc->error_mask = find_errors(tc->upper_bitstream, tc->upper_timecode);
+            if (tc->error_mask) {
+                printf("\nCorrected upper:\n");
+                print_state_binary(tc->upper_bitstream, 110);
+                tc->upper_corrected = correct_errors(tc->upper_bitstream, tc->upper_timecode, tc->error_mask);
+                print_state_binary(tc->upper_corrected, 110);
+            }
 
+            tc->timecode = fwd(tc->timecode, tc->def);
+            tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
 
-            /* print_bit(tc->bitstream, 110); */
-	    /* print_state_binary(tc->upper_timecode, 110); */
-            /* print_state_binary(tc->upper_bitstream, 110); */
-            /* printf("\n"); */
+            tc->error_mask = find_errors(tc->bitstream, tc->timecode);
+            if (tc->error_mask) {
+                tc->bitstream = correct_errors(tc->timecode, tc->bitstream, tc->error_mask);
+                printf("\nCorrect gold code:\n");
+                print_state_binary(tc->timecode, 110);
+                print_state_binary(tc->error_mask, 110);
+                print_state_binary(tc->bitstream, 110);
+                tc->corrected = correct_errors(tc->bitstream, tc->bitstream, tc->error_mask);
+                print_state_binary(tc->bitstream, 110);
+            }
+
         } else {
-            tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
-
             tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->bits - one));
+            tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
+            tc->error_mask = find_errors(tc->lower_bitstream, tc->lower_timecode);
+            if (tc->error_mask) {
+                printf("\nCorrect lower:\n");
+                print_state_binary(tc->lower_bitstream, 110);
+                tc->lower_corrected = correct_errors(tc->lower_bitstream, tc->lower_timecode, tc->error_mask);
+                print_state_binary(tc->lower_corrected, 110);
+            }
 
-            if (tc->lower_timecode != tc->lower_bitstream)
-                tc->lower_timecode = tc->lower_bitstream;
-
-            /* print_state_binary(tc->lower_timecode, 110); */
-            /* print_state_binary(tc->lower_bitstream, 110); */
-            /* printf("\n"); */
         }
 
-            tc->timecode = stable_gold_code(tc->upper_timecode, tc->lower_timecode);
-            tc->bitstream = stable_gold_code(tc->upper_bitstream,tc-> lower_bitstream);
+            /* print_seed(tc->bitstream); */
+            /* print_bit(tc->timecode, 110); */
+            /* print_bit(tc->bitstream, 110); */
+            /* print_state_binary(tc->timecode, 110); */
+            /* print_state_binary(tc->bitstream, 110); */
+            /* printf("\n"); */
     } else {
 	bits_t mask;
         bits_t one = 1;
@@ -961,15 +982,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
     }
 
-    if (tc->reading_type == UPPER_READING) {
-        if (tc->timecode == tc->bitstream) {
-            tc->valid_counter++;
-        }
-        else {
-            tc->timecode = tc->bitstream;
-            tc->valid_counter = 0;
-        }
-    } 
+    if (tc->timecode == tc->bitstream) {
+        tc->valid_counter++;
+        /* printf("valid_counter: %d\n", tc->valid_counter); */
+    } else {
+        tc->timecode = tc->bitstream;
+        tc->valid_counter = 0;
+    }
 
     /* Take note of the last time we read a valid timecode */
 
