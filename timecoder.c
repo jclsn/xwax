@@ -1265,7 +1265,7 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
         process_sample(tc, primary, secondary);
 
         if (tc->def->flags & OFFSET_MODULATION) {
-            update_monitor(tc, tc->primary.deriv, tc->secondary.deriv);
+            update_monitor(tc, tc->primary.deriv * 1.5, tc->secondary.deriv * 1.5);
 	} else {
             update_monitor(tc, left, right);
         }
