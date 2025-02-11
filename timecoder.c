@@ -90,7 +90,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 20
+#define VALID_BITS_TRAKTOR_MK2 24
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -979,6 +979,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         /* Uncomment to print the bitstream to stdout */
     } 
 
+    int needed = 5;
     /* Process the upper and lower codes */
     if (tc->forwards) {
         if (tc->reading_type == UPPER_READING) {
@@ -995,8 +996,8 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 				&tc->def->lfsr2);
 
                 /* If all counters are not 0, use the upper reading for the bitstream */
-		if (tc->upper_valid_counter > 4 && tc->lower_valid_counter > 4 &&
-		    tc->lower_valid_counter2 > 4 && tc->upper_valid_counter2 > 4) {
+		if (tc->upper_valid_counter > needed && tc->lower_valid_counter > needed &&
+		    tc->lower_valid_counter2 > needed && tc->upper_valid_counter2 > needed) {
 			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
 			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
 		}
@@ -1015,8 +1016,8 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 				&tc->def->lfsr2);
 
                 /* If two counters are 0, use the lower reading for the bitstream (inverted signal) */
-		if (tc->upper_valid_counter == 0 && tc->lower_valid_counter == 0 &&
-		    tc->upper_valid_counter2 > 4 && tc->lower_valid_counter2 > 4) {
+		if (!tc->upper_valid_counter && !tc->lower_valid_counter &&
+		    tc->upper_valid_counter2 > needed && tc->lower_valid_counter2 > needed) {
 			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
 			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
 		}
@@ -1042,11 +1043,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     tc->ref_level += m / REF_PEAKS_AVG;
 
     /* Inspect demodulation quality */
-    printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n",
-	   tc->upper_valid_counter,
-	   tc->lower_valid_counter,
-	   tc->upper_valid_counter2,
-	   tc->lower_valid_counter2);
+    /* printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n", */
+	   /* tc->upper_valid_counter, */
+	   /* tc->lower_valid_counter, */
+	   /* tc->upper_valid_counter2, */
+	   /* tc->lower_valid_counter2); */
 }
 
 
