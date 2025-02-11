@@ -1024,6 +1024,46 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	}
 
     } else {
+        if (tc->reading_type == UPPER_READING) {
+		process_subcode_rev(&tc->upper_bit,
+				&tc->upper_bitstream,
+				&tc->upper_timecode,
+				&tc->upper_valid_counter,
+				&tc->def->lfsr1);
+
+                process_subcode_rev(&tc->upper_bit,
+				&tc->upper_bitstream2,
+				&tc->upper_timecode2,
+				&tc->upper_valid_counter2,
+				&tc->def->lfsr2);
+
+                /* If all counters are not 0, use the upper reading for the bitstream */
+		if (tc->upper_valid_counter > needed && tc->lower_valid_counter > needed &&
+		    tc->lower_valid_counter2 > needed && tc->upper_valid_counter2 > needed) {
+			tc->timecode = rev2(tc->timecode, &tc->def->lfsr1);
+			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+		}
+
+	} else {
+		process_subcode_rev(&tc->lower_bit,
+				&tc->lower_bitstream,
+				&tc->lower_timecode,
+				&tc->lower_valid_counter,
+				&tc->def->lfsr1);
+
+                process_subcode_rev(&tc->lower_bit,
+				&tc->lower_bitstream2,
+				&tc->lower_timecode2,
+				&tc->lower_valid_counter2,
+				&tc->def->lfsr2);
+
+                /* If two counters are 0, use the lower reading for the bitstream (inverted signal) */
+		if (!tc->upper_valid_counter && !tc->lower_valid_counter &&
+		    tc->upper_valid_counter2 > needed && tc->lower_valid_counter2 > needed) {
+			tc->timecode = rev2(tc->timecode, &tc->def->lfsr1);
+			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+		}
+	}
     }
 
     if (tc->timecode == tc->bitstream) {
