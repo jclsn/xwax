@@ -91,7 +91,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 24
+#define VALID_BITS_TRAKTOR_MK2 5
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -163,12 +163,17 @@ static struct timecode_def timecodes[] = {
         .desc = "Traktor Scratch MK2, side A",
         .resolution = 2500,
         .flags = OFFSET_MODULATION,
-        .bits = 110,
-        /* .seed = UINT128(0x4200040, 0x1084000000108001), */
-        .seed = UINT128(0x200000008400, 0x802108000000210),
-        /* .seed = UINT128(0x3f83fc1fc030, 0xc63f801ff8c7f07), */
-        .seed2 = UINT128(0x3f83f83fc070, 0x1ce7f801ff9cff06),
-        .taps = UINT128(0x400000000040, 0x0000010800000001),
+        .lfsr1 = {
+            .bits = 110,
+            .seed = UINT128(0x200000008400, 0x802108000000210),
+            .seed2 = UINT128(0x3f83f83fc070, 0x1ce7f801ff9cff06),
+            .taps = UINT128(0x400000000040, 0x0000010800000001),
+        },
+        .lfsr2 = {
+            .bits = 111,
+            /* .taps = UINT128(0x400000000040, 0x0000010800000001), */
+            .taps = UINT128(0xc000000000c0 ,0x0000031800000003),
+        },
         .length = 1500000,
         .safe = 1520000,
     },    
@@ -273,6 +278,16 @@ static inline bits_t fwd(bits_t current, struct timecode_def *def)
     return (current >> 0x1) | (l << (def->bits - 0x1));
 }
 
+static inline bits_t fwd2(bits_t current, struct lfsr *def)
+{
+    /* New bits are added at the MSB; shift right by one */
+
+    bits_t l;
+    l = lfsr(current, def->taps | 0x1);
+    return (current >> 0x1) | (l << (def->bits - 0x1));
+}
+
+
 /*
  * Linear Feedback Shift Register in the reverse direction
  */
@@ -290,6 +305,21 @@ static inline bits_t rev(bits_t current, struct timecode_def *def)
     l = lfsr(current, taps_shifted | bits_shifted);
     return ((current << one) & mask) | l;
 }
+
+static inline bits_t rev2(bits_t current, struct lfsr *def)
+{
+    bits_t l, mask;
+    bits_t one = 1;
+    bits_t taps_shifted = def->taps >> one;
+    bits_t bits_shifted = (one << (def->bits - one));
+
+    /* New bits are added at the LSB; shift left one and mask */
+
+    mask = (one << def->bits) - one;
+    l = lfsr(current, taps_shifted | bits_shifted);
+    return ((current << one) & mask) | l;
+}
+
 
 int lut_store(struct timecode_def *def)
 {
@@ -493,7 +523,7 @@ bits_t correct_errors(bits_t lfsr1, bits_t lfsr2, bits_t error_mask) {
 static int build_lookup(struct timecode_def *def)
 {
     unsigned int n;
-    bits_t current, current2;
+    bits_t current;
 
     if (def->lookup)
         return 0;
@@ -504,28 +534,18 @@ static int build_lookup(struct timecode_def *def)
     if (lut_init(&def->lut, def->length) == -1)
 	return -1;
 
-    current = def->seed;
-    current2 = def->seed2;
+    current = def->lfsr1.seed;
     for (n = 0; n < def->length; n++) {
-        bits_t next, next2;
+        bits_t next;
 
         /* timecode must not wrap */
         assert(lut_lookup(&def->lut, current) == (bits_t)-1);
-        bits_t stable = stable_gold_code(current,  current2);
         lut_push(&def->lut, current);
-        /* lut_push(&def->lut, stable); */
-        /* print_seed(stable); */
-        /* if (n > 20) */
-        /*     exit(0); */
 
-        next = fwd(current, def);
-        assert(rev(next, def) == current);
-
-        next2 = fwd(current2, def);
-        assert(rev(next2, def) == current2);
+        next = fwd2(current, &def->lfsr1);
+        assert(rev2(next, &def->lfsr1) == current);
 
         current = next;
-        current2 = next2;
     }
 
     def->lookup = true;
@@ -549,17 +569,17 @@ struct timecode_def* timecoder_find_definition(const char *name)
         if (strcmp(def->name, name) != 0)
             continue;
 
-        if (!lut_load(def))
-            return def;
+        /* if (!lut_load(def)) */
+        /*     return def; */
 
         if (build_lookup(def) == -1)
             return NULL;  /* error */
 
-        if(lut_store(def)) {
-            timecoder_free_lookup();
-            printf("Couldn't store LUT on disk\n");
-            return NULL;
-        }
+        /* if(lut_store(def)) { */
+        /*     timecoder_free_lookup(); */
+        /*     printf("Couldn't store LUT on disk\n"); */
+        /*     return NULL; */
+        /* } */
 
         return def;
     }
@@ -903,6 +923,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     tc->lower_bit = 0;
             }
 
+            /* printf("%d", (int) tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
 
     } else if (secondary->swapped && !secondary->positive)  {
@@ -917,6 +938,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     tc->upper_bit = 0;
             }
 
+            /* printf("%d", (int) tc->upper_bit & 1); */
             tc->reading_type = UPPER_READING;
 #ifdef MK2_PLOT
         mk2_signal.plot_digit = 1;
@@ -930,8 +952,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         bits_t one = 1;
 
         if (tc->reading_type == UPPER_READING) {
-            tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->bits - one));
-            tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
+
+            tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->lfsr1.bits - one));
+            tc->upper_timecode = fwd2(tc->upper_timecode, &tc->def->lfsr1);
 	    if (tc->upper_timecode == tc->upper_bitstream) {
 		    tc->upper_valid_counter++;
 	    } else {
@@ -939,17 +962,46 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 		    tc->upper_valid_counter = 0;
 	    }
 
-            tc->timecode = fwd(tc->timecode, tc->def);
-            tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+            tc->upper_timecode2 = fwd2(tc->upper_timecode2, &tc->def->lfsr2);
+            tc->upper_bitstream2 = (tc->upper_bitstream2 >> one) + (tc->upper_bit << (tc->def->lfsr2.bits - one));
+	    if (tc->upper_timecode2 == tc->upper_bitstream2) {
+		    tc->upper_valid_counter2++;
+	    } else {
+		    tc->upper_timecode2 = tc->upper_bitstream2;
+		    tc->upper_valid_counter2 = 0;
+	    }
+            
+            if (tc->upper_valid_counter > 4  && tc->lower_valid_counter > 4 && tc->lower_valid_counter2 > 4 && tc->upper_valid_counter2 > 4) {
+                tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
+                tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+            }
+
         } else {
-            tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->bits - one));
-            tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
+            tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->lfsr1.bits - one));
+            tc->lower_timecode = fwd2(tc->lower_timecode, &tc->def->lfsr1);
             if (tc->lower_timecode == tc->lower_bitstream) {
 		    tc->lower_valid_counter++;
 	    } else {
 		    tc->lower_timecode = tc->lower_bitstream;
 		    tc->lower_valid_counter = 0;
 	    }
+
+            tc->lower_bitstream2 = (tc->lower_bitstream2 >> one) + (tc->lower_bit << (tc->def->lfsr2.bits - one));
+            tc->lower_timecode2 = fwd2(tc->lower_timecode2, &tc->def->lfsr2);
+	    if (tc->lower_timecode2 == tc->lower_bitstream2) {
+		    tc->lower_valid_counter2++;
+	    } else {
+		    tc->lower_timecode2 = tc->lower_bitstream2;
+		    tc->lower_valid_counter2 = 0;
+	    }
+
+            if (tc->upper_valid_counter == 0 && tc->lower_valid_counter == 0 && tc->upper_valid_counter2 > 4 && tc->lower_valid_counter2 > 4) {
+                tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
+                tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+
+            }
+
+
         }
 
     } else {
@@ -963,14 +1015,12 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
     }
 
-    if (tc->upper_valid_counter > 4 && tc->lower_valid_counter > 4 && tc->timecode == tc->bitstream) {
+    if (tc->timecode == tc->bitstream) {
         tc->valid_counter++;
-        /* printf("valid_counter: %d\n", tc->valid_counter); */
     } else {
         tc->timecode = tc->bitstream;
         tc->valid_counter = 0;
     }
-
     /* Take note of the last time we read a valid timecode */
 
     tc->timecode_ticker = 0;
@@ -982,7 +1032,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     tc->ref_level += m / REF_PEAKS_AVG;
 
     /* Inspect demodulation quality */
-    printf("upper_valid_counter: %d, lower_valid_counter %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
+    /* printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n", */
+	   /* tc->upper_valid_counter, */
+	   /* tc->lower_valid_counter, */
+	   /* tc->upper_valid_counter2, */
+	   /* tc->lower_valid_counter2); */
 }
 
 

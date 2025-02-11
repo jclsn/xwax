@@ -43,6 +43,7 @@ struct lfsr {
 
         /* LFSR definition */
         bits_t seed;
+        bits_t seed2;
         bits_t taps;
         bits_t bits;
         unsigned cycles;
@@ -114,9 +115,12 @@ struct timecoder {
 
     int reading_type;
 
-    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode, upper_gold_bitstream, lower_gold_bitstream, upper_gold_timecode, lower_gold_timecode; 
+    bits_t upper_bitstream, lower_bitstream, upper_bitstream2, lower_bitstream2, upper_timecode, lower_timecode, upper_timecode2, lower_timecode2, upper_gold_bitstream,
+	    lower_gold_bitstream, upper_gold_timecode, lower_gold_timecode;
     bits_t upper_corrected, lower_corrected, corrected;
-    unsigned int upper_match, lower_match, upper_valid_counter, lower_valid_counter, upper_gold_counter, lower_gold_counter;
+    unsigned int upper_match, lower_match, upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2,
+
+	    upper_gold_counter, lower_gold_counter;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
