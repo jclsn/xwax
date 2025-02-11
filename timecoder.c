@@ -91,7 +91,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 10
+#define VALID_BITS_TRAKTOR_MK2 24
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -633,6 +633,8 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->valid_counter = 0;
     tc->timecode_ticker = 0;
 
+    tc->upper_valid_counter = 0;
+    tc->lower_valid_counter = 0;
     tc->mon = NULL;
 
     #ifdef MK2_PLOT
@@ -768,6 +770,7 @@ static int detect_offset_jump(int reading, int *last_reading, int threshold, int
     /* Calculate the slope */
     int slope = reading - *last_reading;
     *last_reading = reading;
+    int lower_threshold = threshold * 1.3;
 
     /* Define jump constraints */
     if (reading_type == UPPER_READING) {
@@ -778,9 +781,9 @@ static int detect_offset_jump(int reading, int *last_reading, int threshold, int
         else
             return NO_JUMP;
     } else {
-        if (slope > threshold && (reading > -threshold * 2 || reading > 0) )
+        if (slope > lower_threshold && (reading > -lower_threshold * 2 || reading > 0) )
             return JUMPED_UP;
-        else if (slope < -threshold && reading < threshold * 2)
+        else if (slope < -lower_threshold && reading < lower_threshold * 2)
             return JUMPED_DOWN;
         else
             return NO_JUMP;
@@ -928,49 +931,27 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
         if (tc->reading_type == UPPER_READING) {
             tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->bits - one));
-
             tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
-            tc->error_mask = find_errors(tc->upper_bitstream, tc->upper_timecode);
-            if (tc->error_mask) {
-                printf("\nCorrected upper:\n");
-                print_state_binary(tc->upper_bitstream, 110);
-                tc->upper_corrected = correct_errors(tc->upper_bitstream, tc->upper_timecode, tc->error_mask);
-                print_state_binary(tc->upper_corrected, 110);
-            }
+	    if (tc->upper_timecode == tc->upper_bitstream) {
+		    tc->upper_valid_counter++;
+	    } else {
+		    tc->upper_timecode = tc->upper_bitstream;
+		    tc->upper_valid_counter = 0;
+	    }
 
             tc->timecode = fwd(tc->timecode, tc->def);
             tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-
-            tc->error_mask = find_errors(tc->bitstream, tc->timecode);
-            if (tc->error_mask) {
-                tc->bitstream = correct_errors(tc->timecode, tc->bitstream, tc->error_mask);
-                printf("\nCorrect gold code:\n");
-                print_state_binary(tc->timecode, 110);
-                print_state_binary(tc->error_mask, 110);
-                print_state_binary(tc->bitstream, 110);
-                tc->corrected = correct_errors(tc->bitstream, tc->bitstream, tc->error_mask);
-                print_state_binary(tc->bitstream, 110);
-            }
-
         } else {
             tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->bits - one));
             tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
-            tc->error_mask = find_errors(tc->lower_bitstream, tc->lower_timecode);
-            if (tc->error_mask) {
-                printf("\nCorrect lower:\n");
-                print_state_binary(tc->lower_bitstream, 110);
-                tc->lower_corrected = correct_errors(tc->lower_bitstream, tc->lower_timecode, tc->error_mask);
-                print_state_binary(tc->lower_corrected, 110);
-            }
-
+            if (tc->lower_timecode == tc->lower_bitstream) {
+		    tc->lower_valid_counter++;
+	    } else {
+		    tc->lower_timecode = tc->lower_bitstream;
+		    tc->lower_valid_counter = 0;
+	    }
         }
 
-            /* print_seed(tc->bitstream); */
-            /* print_bit(tc->timecode, 110); */
-            /* print_bit(tc->bitstream, 110); */
-            /* print_state_binary(tc->timecode, 110); */
-            /* print_state_binary(tc->bitstream, 110); */
-            /* printf("\n"); */
     } else {
 	bits_t mask;
         bits_t one = 1;
@@ -982,7 +963,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
     }
 
-    if (tc->timecode == tc->bitstream) {
+    if (tc->upper_valid_counter > 4 && tc->lower_valid_counter > 4 && tc->timecode == tc->bitstream) {
         tc->valid_counter++;
         /* printf("valid_counter: %d\n", tc->valid_counter); */
     } else {
@@ -999,6 +980,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     signed int m = abs(reading / 2 - tc->primary.zero / 2);
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
     tc->ref_level += m / REF_PEAKS_AVG;
+
+    /* Inspect demodulation quality */
+    printf("upper_valid_counter: %d, lower_valid_counter %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
 }
 
 

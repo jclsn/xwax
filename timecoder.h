@@ -114,8 +114,9 @@ struct timecoder {
 
     int reading_type;
 
-    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode; 
+    bits_t upper_bitstream, lower_bitstream, upper_timecode, lower_timecode, upper_gold_bitstream, lower_gold_bitstream, upper_gold_timecode, lower_gold_timecode; 
     bits_t upper_corrected, lower_corrected, corrected;
+    unsigned int upper_match, lower_match, upper_valid_counter, lower_valid_counter, upper_gold_counter, lower_gold_counter;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
