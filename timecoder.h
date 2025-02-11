@@ -30,11 +30,6 @@
 
 #define TIMECODER_CHANNELS 2
 
-struct mk2_taps {
-    unsigned short fwd[5];
-    unsigned short rev[5];
-};
-
 struct lfsr {
         /* LFSR states */
         bits_t current;
@@ -46,7 +41,6 @@ struct lfsr {
         bits_t seed2;
         bits_t taps;
         bits_t bits;
-        unsigned cycles;
 };
 
 struct timecode_def {
@@ -56,12 +50,10 @@ struct timecode_def {
         flags;
     bits_t seed, /* LFSR value at timecode zero */
         taps; /* central LFSR taps, excluding end taps */
-    bits_t seed2, taps2;
     unsigned int length, /* in cycles */
         safe; /* last 'safe' timecode number (for auto disconnect) */
     bool lookup; /* true if lut has been generated */
     struct lut lut;
-    struct mk2_taps mk2_taps;
     struct lfsr lfsr1, lfsr2;
 };
 
@@ -71,15 +63,18 @@ struct timecoder_channel {
     signed int zero;
     unsigned int crossing_ticker; /* samples since we last crossed zero */
 
+    int ref_level;
+
     /* For MK2 demodulation */
-    int last_upper_reading, last_lower_reading;
-    int jump_upper, jump_lower;
-    int lower_reading, upper_reading;
     struct delayline delayline;
     struct delayline envelope_heights;
 
     unsigned int avg_envelope_height, offset_threshold;
-    int ref_level;
+    int last_upper_reading, last_lower_reading;
+    int jump_upper, jump_lower;
+    int lower_reading, upper_reading;
+    int deriv, deriv_old;
+    int ema_old;
 };
 
 struct timecoder {
@@ -115,12 +110,9 @@ struct timecoder {
 
     int reading_type;
 
-    bits_t upper_bitstream, lower_bitstream, upper_bitstream2, lower_bitstream2, upper_timecode, lower_timecode, upper_timecode2, lower_timecode2, upper_gold_bitstream,
-	    lower_gold_bitstream, upper_gold_timecode, lower_gold_timecode;
-    bits_t upper_corrected, lower_corrected, corrected;
-    unsigned int upper_match, lower_match, upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2,
-
-	    upper_gold_counter, lower_gold_counter;
+    bits_t upper_bitstream, lower_bitstream, upper_bitstream2, lower_bitstream2;
+    bits_t upper_timecode, lower_timecode, upper_timecode2, lower_timecode2;
+    unsigned int upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);

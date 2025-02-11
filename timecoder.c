@@ -42,7 +42,6 @@
 #include "filters.h"
 #include "lut.h"
 #include "timecoder.h"
-#include "print.h"
 
 /*
  * Uncomment to use the plotting script 
@@ -91,7 +90,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 5
+#define VALID_BITS_TRAKTOR_MK2 20
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -113,6 +112,11 @@ static struct timecode_def timecodes[] = {
         .bits = 20,
         .seed = 0x59017,
         .taps = 0x361e4,
+        .lfsr1 = {
+            .bits = 20,
+            .seed = 0x59017,
+            .taps = 0x361e4,
+        },
         .length = 712000,
         .safe = 707000,
     },
@@ -870,6 +874,34 @@ static void get_envelope_heights(struct timecoder *tc, signed int reading)
     }
 }
 
+void process_subcode(bits_t *bit, bits_t *bitstream, bits_t *timecode, unsigned int *valid_counter, struct lfsr *def) {
+            bits_t one = 1;
+            *bitstream = (*bitstream >> one) + (*bit << (def->bits - one));
+            *timecode = fwd2(*timecode, def);
+	    if (*timecode == *bitstream) {
+		    (*valid_counter)++;
+	    } else {
+		    *timecode = *bitstream;
+		    *valid_counter = 0;
+	    }
+}
+
+void process_subcode_rev(bits_t *bit, bits_t *bitstream, bits_t *timecode, unsigned int *valid_counter, struct lfsr *def) {
+            bits_t one = 1;
+            bits_t mask = ((one << def->bits) - one);
+
+            *bitstream = ((*bitstream << one) & mask) + *bit;
+            *timecode = rev2(*timecode, def);
+	    if (*timecode == *bitstream) {
+		    (*valid_counter)++;
+	    } else {
+		    *timecode = *bitstream;
+		    *valid_counter = 0;
+	    }
+}
+
+
+
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     int primary_reading;
@@ -949,70 +981,48 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     /* Process the upper and lower codes */
     if (tc->forwards) {
-        bits_t one = 1;
-
         if (tc->reading_type == UPPER_READING) {
+		process_subcode(&tc->upper_bit,
+				&tc->upper_bitstream,
+				&tc->upper_timecode,
+				&tc->upper_valid_counter,
+				&tc->def->lfsr1);
 
-            tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->lfsr1.bits - one));
-            tc->upper_timecode = fwd2(tc->upper_timecode, &tc->def->lfsr1);
-	    if (tc->upper_timecode == tc->upper_bitstream) {
-		    tc->upper_valid_counter++;
-	    } else {
-		    tc->upper_timecode = tc->upper_bitstream;
-		    tc->upper_valid_counter = 0;
-	    }
+                process_subcode(&tc->upper_bit,
+				&tc->upper_bitstream2,
+				&tc->upper_timecode2,
+				&tc->upper_valid_counter2,
+				&tc->def->lfsr2);
 
-            tc->upper_timecode2 = fwd2(tc->upper_timecode2, &tc->def->lfsr2);
-            tc->upper_bitstream2 = (tc->upper_bitstream2 >> one) + (tc->upper_bit << (tc->def->lfsr2.bits - one));
-	    if (tc->upper_timecode2 == tc->upper_bitstream2) {
-		    tc->upper_valid_counter2++;
-	    } else {
-		    tc->upper_timecode2 = tc->upper_bitstream2;
-		    tc->upper_valid_counter2 = 0;
-	    }
-            
-            if (tc->upper_valid_counter > 4  && tc->lower_valid_counter > 4 && tc->lower_valid_counter2 > 4 && tc->upper_valid_counter2 > 4) {
-                tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
-                tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-            }
+                /* If all counters are not 0, use the upper reading for the bitstream */
+		if (tc->upper_valid_counter > 4 && tc->lower_valid_counter > 4 &&
+		    tc->lower_valid_counter2 > 4 && tc->upper_valid_counter2 > 4) {
+			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
+			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+		}
 
-        } else {
-            tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->lfsr1.bits - one));
-            tc->lower_timecode = fwd2(tc->lower_timecode, &tc->def->lfsr1);
-            if (tc->lower_timecode == tc->lower_bitstream) {
-		    tc->lower_valid_counter++;
-	    } else {
-		    tc->lower_timecode = tc->lower_bitstream;
-		    tc->lower_valid_counter = 0;
-	    }
+	} else {
+		process_subcode(&tc->lower_bit,
+				&tc->lower_bitstream,
+				&tc->lower_timecode,
+				&tc->lower_valid_counter,
+				&tc->def->lfsr1);
 
-            tc->lower_bitstream2 = (tc->lower_bitstream2 >> one) + (tc->lower_bit << (tc->def->lfsr2.bits - one));
-            tc->lower_timecode2 = fwd2(tc->lower_timecode2, &tc->def->lfsr2);
-	    if (tc->lower_timecode2 == tc->lower_bitstream2) {
-		    tc->lower_valid_counter2++;
-	    } else {
-		    tc->lower_timecode2 = tc->lower_bitstream2;
-		    tc->lower_valid_counter2 = 0;
-	    }
+                process_subcode(&tc->lower_bit,
+				&tc->lower_bitstream2,
+				&tc->lower_timecode2,
+				&tc->lower_valid_counter2,
+				&tc->def->lfsr2);
 
-            if (tc->upper_valid_counter == 0 && tc->lower_valid_counter == 0 && tc->upper_valid_counter2 > 4 && tc->lower_valid_counter2 > 4) {
-                tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
-                tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-
-            }
-
-
-        }
+                /* If two counters are 0, use the lower reading for the bitstream (inverted signal) */
+		if (tc->upper_valid_counter == 0 && tc->lower_valid_counter == 0 &&
+		    tc->upper_valid_counter2 > 4 && tc->lower_valid_counter2 > 4) {
+			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
+			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
+		}
+	}
 
     } else {
-	bits_t mask;
-        bits_t one = 1;
-
-	mask = ((one << tc->def->bits) - one);
-
-        tc->timecode = rev(tc->timecode, tc->def);
-
-	tc->bitstream = ((tc->bitstream << one) & mask) + tc->upper_bit;
     }
 
     if (tc->timecode == tc->bitstream) {
@@ -1032,11 +1042,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     tc->ref_level += m / REF_PEAKS_AVG;
 
     /* Inspect demodulation quality */
-    /* printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n", */
-	   /* tc->upper_valid_counter, */
-	   /* tc->lower_valid_counter, */
-	   /* tc->upper_valid_counter2, */
-	   /* tc->lower_valid_counter2); */
+    printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n",
+	   tc->upper_valid_counter,
+	   tc->lower_valid_counter,
+	   tc->upper_valid_counter2,
+	   tc->lower_valid_counter2);
 }
 
 
@@ -1103,14 +1113,12 @@ static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
     double alpha = 0.3;
-    int primary_deriv = 0;
-    int secondary_deriv = 0;
 
     if (tc->def->flags & OFFSET_MODULATION) {
-        primary_deriv = discrete_derivative(ema(primary, &ema_primary_old, alpha), &primary_old);
-        secondary_deriv = discrete_derivative(ema(secondary, &ema_secondary_old, alpha), &secondary_old);
-        detect_zero_crossing(&tc->primary, primary_deriv, tc->zero_alpha, tc->threshold);
-        detect_zero_crossing(&tc->secondary, secondary_deriv, tc->zero_alpha, tc->threshold);
+        tc->primary.deriv = discrete_derivative(ema(primary, &tc->primary.ema_old, alpha), &tc->primary.deriv_old);
+        tc->secondary.deriv = discrete_derivative(ema(secondary, &tc->secondary.ema_old, alpha), &tc->secondary.deriv_old);
+        detect_zero_crossing(&tc->primary, tc->primary.deriv, tc->zero_alpha, tc->threshold);
+        detect_zero_crossing(&tc->secondary, tc->secondary.deriv, tc->zero_alpha, tc->threshold);
     } else {
         detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
         detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
@@ -1172,7 +1180,6 @@ static void process_sample(struct timecoder *tc,
 			signed int reading = *delayline_at_index(&tc->primary.delayline, FILTER_DELAY);
                         get_envelope_heights(tc, reading);
 			process_mk2_bitstream(tc, reading);
-                        
 		} else if (tc->secondary.swapped) {
 			signed int reading = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
                         get_envelope_heights(tc, reading);
@@ -1257,12 +1264,11 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
         process_sample(tc, primary, secondary);
 
         if (tc->def->flags & OFFSET_MODULATION) {
-            int mon_left = discrete_derivative(left, &left_old);
-            int mon_right = discrete_derivative(right, &right_old);
-            update_monitor(tc, mon_left * 1.25, mon_right * 1.25);
-        } else {
+            update_monitor(tc, tc->primary.deriv, tc->secondary.deriv);
+	} else {
             update_monitor(tc, left, right);
         }
+
 
         pcm += TIMECODER_CHANNELS;
     }
