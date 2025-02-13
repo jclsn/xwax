@@ -42,6 +42,7 @@
 #include "filters.h"
 #include "lut.h"
 #include "timecoder.h"
+#include "print.h"
 
 /*
  * Uncomment to use the plotting script 
@@ -169,14 +170,16 @@ static struct timecode_def timecodes[] = {
         .flags = OFFSET_MODULATION,
         .lfsr1 = {
             .bits = 110,
-            .seed = UINT128(0x200000008400, 0x802108000000210),
-            .seed2 = UINT128(0x3f83f83fc070, 0x1ce7f801ff9cff06),
+            /* .seed = UINT128(0x200000008400, 0x802108000000210), */
+            .seed = UINT128(0x3f83fc1fc030, 0xc63f801ff8c7f07),
+            /* .seed2 = UINT128(0x3f83f83fc070, 0x1ce7f801ff9cff06), */
             .taps = UINT128(0x400000000040, 0x0000010800000001),
         },
         .lfsr2 = {
             .bits = 111,
             /* .taps = UINT128(0x400000000040, 0x0000010800000001), */
-            .taps = UINT128(0xc000000000c0 ,0x0000031800000003),
+            /* .taps = UINT128(0xc000000000c0 ,0x0000031800000003), */
+            .taps = UINT128(0x400000000040, 0x0000010800000001),
         },
         .length = 1500000,
         .safe = 1520000,
@@ -782,12 +785,12 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 						       LOWER_READING);
 
 	    if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) {
-                    tc->lower_bit = 1;
-            } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) {
                     tc->lower_bit = 0;
+            } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) {
+                    tc->lower_bit = 1;
             }
 
-            /* printf("%d", (int) tc->lower_bit & 1); */
+            /* printf("%d", (int) ~tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
 
     } else if (secondary->swapped && !secondary->positive)  {
@@ -811,91 +814,71 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         /* Uncomment to print the bitstream to stdout */
     } 
 
-    int needed = 5;
+    bits_t one = 1;
     /* Process the upper and lower codes */
     if (tc->forwards) {
         if (tc->reading_type == UPPER_READING) {
-		process_subcode(&tc->upper_bit,
-				&tc->upper_bitstream,
-				&tc->upper_timecode,
-				&tc->upper_valid_counter,
-				&tc->def->lfsr1);
+                tc->upper_timecode = fwd2(tc->upper_timecode, &tc->def->lfsr1);
+                tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->lfsr1.bits - one));
+                if (tc->upper_timecode == tc->upper_bitstream) {
+                        tc->upper_valid_counter++;
+                    } else {
+                        tc->upper_timecode = tc->upper_bitstream;
+                        tc->upper_valid_counter = 0;
+                    }
 
-                process_subcode(&tc->upper_bit,
-				&tc->upper_bitstream2,
-				&tc->upper_timecode2,
-				&tc->upper_valid_counter2,
-				&tc->def->lfsr2);
+        } else {
+                tc->lower_timecode = fwd2(tc->lower_timecode, &tc->def->lfsr1);
+                tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->lfsr1.bits - one));
+                if (tc->lower_timecode == tc->lower_bitstream) {
+                        tc->lower_valid_counter++;
+                    } else {
+                        tc->lower_timecode = tc->lower_bitstream;
+                        tc->lower_valid_counter = 0;
+                    }
+        }
 
-                /* If all counters are not 0, use the upper reading for the bitstream */
-		if (tc->upper_valid_counter > needed && tc->lower_valid_counter > needed &&
-		    tc->lower_valid_counter2 > needed && tc->upper_valid_counter2 > needed) {
-			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
-			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-		}
+        if (tc->upper_valid_counter > 5) {
+            tc->bitstream = tc->upper_bitstream;
+            tc->timecode = tc->upper_timecode;
+        } else if (tc->lower_valid_counter > 5 ) {
+            tc->bitstream = tc->lower_bitstream;
+            tc->timecode = tc->lower_timecode;
+        }
 
-	} else {
-		process_subcode(&tc->lower_bit,
-				&tc->lower_bitstream,
-				&tc->lower_timecode,
-				&tc->lower_valid_counter,
-				&tc->def->lfsr1);
-
-                process_subcode(&tc->lower_bit,
-				&tc->lower_bitstream2,
-				&tc->lower_timecode2,
-				&tc->lower_valid_counter2,
-				&tc->def->lfsr2);
-
-                /* If two counters are 0, use the lower reading for the bitstream (inverted signal) */
-		if (!tc->upper_valid_counter && !tc->lower_valid_counter &&
-		    tc->upper_valid_counter2 > needed && tc->lower_valid_counter2 > needed) {
-			tc->timecode = fwd2(tc->timecode, &tc->def->lfsr1);
-			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-		}
-	}
-
+            printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
     } else {
+        bits_t mask = ((one << tc->def->lfsr1.bits) - one);
         if (tc->reading_type == UPPER_READING) {
-		process_subcode_rev(&tc->upper_bit,
-				&tc->upper_bitstream,
-				&tc->upper_timecode,
-				&tc->upper_valid_counter,
-				&tc->def->lfsr1);
+                tc->upper_timecode = rev2(tc->upper_timecode, &tc->def->lfsr1);
+                tc->upper_bitstream = ((tc->upper_bitstream << one) & mask) + tc->upper_bit;
+                if (tc->upper_timecode == tc->upper_bitstream) {
+                        tc->upper_valid_counter++;
+                    } else {
+                        tc->upper_timecode = tc->upper_bitstream;
+                        tc->upper_valid_counter = 0;
+                    }
 
-                process_subcode_rev(&tc->upper_bit,
-				&tc->upper_bitstream2,
-				&tc->upper_timecode2,
-				&tc->upper_valid_counter2,
-				&tc->def->lfsr2);
+        } else {
+                tc->lower_timecode = rev2(tc->lower_timecode, &tc->def->lfsr1);
+                tc->lower_bitstream = ((tc->lower_bitstream << one) & mask) + tc->lower_bit;
+                if (tc->lower_timecode == tc->lower_bitstream) {
+                        tc->lower_valid_counter++;
+                    } else {
+                        tc->lower_timecode = tc->lower_bitstream;
+                        tc->lower_valid_counter = 0;
+                    }
+        }
+        if (tc->upper_valid_counter > 5) {
+            tc->bitstream = tc->upper_bitstream;
+            tc->timecode = tc->upper_timecode;
+        } else if (tc->lower_valid_counter > 5 ) {
+            tc->bitstream = tc->lower_bitstream;
+            tc->timecode = tc->lower_timecode;
+        }
 
-                /* If all counters are not 0, use the upper reading for the bitstream */
-		if (tc->upper_valid_counter > needed && tc->lower_valid_counter > needed &&
-		    tc->lower_valid_counter2 > needed && tc->upper_valid_counter2 > needed) {
-			tc->timecode = rev2(tc->timecode, &tc->def->lfsr1);
-			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-		}
+        printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
 
-	} else {
-		process_subcode_rev(&tc->lower_bit,
-				&tc->lower_bitstream,
-				&tc->lower_timecode,
-				&tc->lower_valid_counter,
-				&tc->def->lfsr1);
-
-                process_subcode_rev(&tc->lower_bit,
-				&tc->lower_bitstream2,
-				&tc->lower_timecode2,
-				&tc->lower_valid_counter2,
-				&tc->def->lfsr2);
-
-                /* If two counters are 0, use the lower reading for the bitstream (inverted signal) */
-		if (!tc->upper_valid_counter && !tc->lower_valid_counter &&
-		    tc->upper_valid_counter2 > needed && tc->lower_valid_counter2 > needed) {
-			tc->timecode = rev2(tc->timecode, &tc->def->lfsr1);
-			tc->bitstream = stable_gold_code(tc->upper_bitstream, tc->lower_bitstream);
-		}
-	}
     }
 
     if (tc->timecode == tc->bitstream) {

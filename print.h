@@ -2,7 +2,7 @@
 
 #define PRINT_H
 
-#include "lut.h"
+typedef unsigned __int128 bits_t;
 
 void print_seed(bits_t code);
 void print_uint128(bits_t code);

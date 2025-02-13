@@ -185,7 +185,7 @@ tests/observer:	tests/observer.o
 
 tests/status:	tests/status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o filters.o delayline.o
+tests/timecoder:	tests/timecoder.o lut.o timecoder.o filters.o delayline.o print.o
 tests/timecoder:	LDFLAGS += -lm
 tests/timecoder:	LDLIBS += -lm
 
