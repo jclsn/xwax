@@ -74,7 +74,8 @@ struct timecoder_channel {
     int jump_upper, jump_lower;
     int lower_reading, upper_reading;
     int deriv, deriv_old;
-    int ema_old;
+    int ema, ema_old;
+    int ema2, ema_old2;
     int upper_slope, lower_slope;
 };
 
@@ -114,6 +115,7 @@ struct timecoder {
     bits_t upper_bitstream, lower_bitstream, upper_bitstream2, lower_bitstream2;
     bits_t upper_timecode, lower_timecode, upper_timecode2, lower_timecode2;
     unsigned int upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2;
+    bool lower_just_flipped, upper_just_flipped;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
