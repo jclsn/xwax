@@ -765,7 +765,8 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
      * Detect if the offset jumps up or down on primary or secondary channel.
      * Both channels are checked to increase accuracy
      */
-
+#define FORWARD_FACTOR 2
+#define REVERSE_FACTOR 1.6 
     if (primary->swapped && primary->positive)  {
 	    primary->jump_lower = detect_offset_jump(primary_reading,
 						     &primary->last_lower_reading,
@@ -773,50 +774,66 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 						     LOWER_READING);
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
+	    tc->primary.upper_slope =
+		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.001);
+	    /* printf("current slope:      %f, average slope:      %f\n", */
+		   /* (float)(primary_reading - tc->primary.last_upper_reading) / INT_MAX, */
+		   /* (float)tc->primary.slope / INT_MAX); */
+
 	    primary->jump_upper = detect_offset_jump(primary_reading,
 						     &primary->last_upper_reading,
 						     primary->offset_threshold,
 						     UPPER_READING);
-
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
+            float current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
+	    tc->secondary.lower_slope =
+                ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
 	    secondary->jump_lower = detect_offset_jump(secondary_reading,
 						       &secondary->last_lower_reading,
 						       secondary->offset_threshold,
 						       LOWER_READING);
 
-	    if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) {
-                if (tc->forwards)
-                    tc->lower_bit = 0;
-                else
-                    tc->lower_bit = 1;
-            } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) {
-                if (tc->forwards)
-                    tc->lower_bit = 1;
-                else
-                    tc->lower_bit = 0;
-            }
+	    /* if ((secondary->jump_lower == JUMPED_UP) || (secondary->jump_lower == JUMPED_DOWN) ) */
+                /* printf("current slope:      %f, average slope:      %f\n", */
+			   /* current_slope, */
+			   /* (float)tc->secondary.lower_slope / INT_MAX); */
 
-            /* printf("%d", (int) ~tc->lower_bit & 1); */
+	    /* if ((primary->jump_lower | secondary->jump_lower ) & JUMPED_UP) { */
+            /* } else if ( ((primary->jump_lower | secondary->jump_lower) & JUMPED_DOWN )) { */
+            if (current_slope > (float)FORWARD_FACTOR*secondary->lower_slope/INT_MAX && tc->forwards) 
+                    tc->lower_bit = 0;
+            else if (current_slope > (float)REVERSE_FACTOR*secondary->lower_slope/INT_MAX && !tc->forwards) 
+                    tc->lower_bit = 1;
+            else if (current_slope < (float)-FORWARD_FACTOR*secondary->lower_slope/INT_MAX && tc->forwards) 
+                    tc->lower_bit = 1;
+            else if (current_slope < (float)-REVERSE_FACTOR*secondary->lower_slope/INT_MAX && !tc->forwards) 
+                    tc->lower_bit = 0;
+
+            printf("%d", (int) ~tc->lower_bit & 1);
             tc->reading_type = LOWER_READING;
 
     } else if (secondary->swapped && !secondary->positive)  {
+            float current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
+	    tc->secondary.upper_slope =
+            ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
 	    secondary->jump_upper = detect_offset_jump(secondary_reading,
 						       &secondary->last_upper_reading,
 						       secondary->offset_threshold,
 						       UPPER_READING);
-            /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-            if ((primary->jump_upper | secondary->jump_upper ) & JUMPED_UP) {
-                if (tc->forwards)
+
+
+	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
+            /* if ((primary->jump_upper | secondary->jump_upper ) & JUMPED_UP) { */
+            if (current_slope > (float)FORWARD_FACTOR*secondary->upper_slope/INT_MAX && tc->forwards) 
                     tc->upper_bit = 1;
-                else
+            else if (current_slope > (float)REVERSE_FACTOR*secondary->upper_slope/INT_MAX && !tc->forwards) 
                     tc->upper_bit = 0;
-            } else if ( ((primary->jump_upper | secondary->jump_upper) & JUMPED_DOWN )) {
-                if (tc->forwards)
+            /* } else if ( ((primary->jump_upper | secondary->jump_upper) & JUMPED_DOWN )) { */
+            else if (current_slope < (float)-FORWARD_FACTOR*secondary->upper_slope/INT_MAX && tc->forwards) 
                     tc->upper_bit = 0;
-                else
+            else if (current_slope < (float)-REVERSE_FACTOR*secondary->upper_slope/INT_MAX && !tc->forwards) 
                     tc->upper_bit = 1;
-            }
 
             /* printf("%d", (int) tc->upper_bit & 1); */
             tc->reading_type = UPPER_READING;
@@ -824,7 +841,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
         mk2_signal.plot_digit = 1;
 #endif
 
-        /* Uncomment to print the bitstream to stdout */
+	/* Uncomment to print the bitstream to stdout */
     } 
 
     bits_t one = 1;
@@ -840,7 +857,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                         tc->upper_valid_counter = 0;
                     }
 
-        } else {
+	} else {
                 tc->lower_timecode = fwd2(tc->lower_timecode, &tc->def->lfsr1);
                 tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->lfsr1.bits - one));
                 if (tc->lower_timecode == tc->lower_bitstream) {
@@ -859,7 +876,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             tc->timecode = tc->lower_timecode;
         }
 
-            printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
+            /* printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter); */
     } else {
 
         bits_t mask = ((one << tc->def->lfsr1.bits) - one);
@@ -891,7 +908,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             tc->timecode = tc->lower_timecode;
         }
 
-        printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter);
+        /* printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter); */
 
     }
 

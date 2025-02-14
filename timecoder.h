@@ -75,6 +75,7 @@ struct timecoder_channel {
     int lower_reading, upper_reading;
     int deriv, deriv_old;
     int ema_old;
+    int upper_slope, lower_slope;
 };
 
 struct timecoder {
