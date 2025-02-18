@@ -563,10 +563,10 @@ void bits_t_print_binary(bits_t a) {
 #define LOWER_READING 1
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
-    int primary_reading;
-    int secondary_reading;
-    struct timecoder_channel *primary;
-    struct timecoder_channel *secondary;
+    struct timecoder_channel *primary, *secondary;
+    int primary_reading, secondary_reading;
+    float threshold, current_slope, last_slope;
+    bits_t one;
 
         primary = &tc->primary;
         secondary = &tc->secondary;
@@ -603,32 +603,26 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
 	    tc->secondary.lower_slope = ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
-            float current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
+            current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
             secondary->last_lower_reading = secondary_reading;
-            float last_slope = (float) secondary->lower_slope / INT_MAX;
+            last_slope = (float) secondary->lower_slope / INT_MAX;
 
 	    if (!tc->lower_bit_flipped) {
 		    if (tc->forwards) {
-                            bits_t one = 0;
-                            float threshold = FORWARD_FACTOR * last_slope;
-			    if (current_slope > threshold && tc->lower_bit == !one) {
-				    tc->lower_bit = one;
-				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->lower_bit == one) {
-				    tc->lower_bit = !one;
-				    tc->lower_bit_flipped = true;
-			    }
-		    } else {
-                            bits_t one = 1;
-                            float threshold = REVERSE_FACTOR * last_slope;
-			    if (current_slope > threshold && tc->lower_bit == !one) {
-				    tc->lower_bit = one;
-				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->lower_bit == one) {
-				    tc->lower_bit = !one;
-				    tc->lower_bit_flipped = true;
-			    }
-		    }
+                            one = 0;
+                            threshold = FORWARD_FACTOR * last_slope;
+                    } else {
+                            one = 1;
+                            threshold = REVERSE_FACTOR * last_slope;
+                    }
+
+                    if (current_slope > threshold && tc->lower_bit == !one) {
+                            tc->lower_bit = one;
+                            tc->lower_bit_flipped = true;
+                    } else if (current_slope < -threshold && tc->lower_bit == one) {
+                            tc->lower_bit = !one;
+                            tc->lower_bit_flipped = true;
+                    }
 	    } else {
 		    tc->lower_bit_flipped = false;
 	    }
@@ -638,35 +632,28 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     } else if (secondary->swapped && !secondary->positive)  {
 	    tc->secondary.upper_slope = ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
-            float current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
+            current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
             secondary->last_upper_reading = secondary_reading;
-            float last_slope = (float) secondary->upper_slope / INT_MAX;
+            last_slope = (float) secondary->upper_slope / INT_MAX;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
 	    if (!tc->upper_bit_flipped) {
 		    if (tc->forwards) {
-                            bits_t one = 1;
-                            float threshold = FORWARD_FACTOR * last_slope;
+                            one = 1;
+                            threshold = FORWARD_FACTOR * last_slope;
+                    } else {
+                            one = 0;
+                            threshold = REVERSE_FACTOR * last_slope;
+                    }
 
-			    if (current_slope > threshold && tc->upper_bit == !one) {
-				    tc->upper_bit = one;
-				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->upper_bit == one) {
-				    tc->upper_bit = !one;
-				    tc->upper_bit_flipped = true;
-			    }
-		    } else {
-                            bits_t one = 0;
-                            float threshold = REVERSE_FACTOR * last_slope;
+                    if (current_slope > threshold && tc->upper_bit == !one) {
+                            tc->upper_bit = one;
+                            tc->upper_bit_flipped = true;
+                    } else if (current_slope < -threshold && tc->upper_bit == one) {
+                            tc->upper_bit = !one;
+                            tc->upper_bit_flipped = true;
+                    }
 
-			    if (current_slope > threshold && tc->upper_bit == !one) {
-				    tc->upper_bit = one;
-				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->upper_bit == one) {
-				    tc->upper_bit = !one;
-				    tc->upper_bit_flipped = true;
-			    }
-		    }
 	    } else {
 		    tc->upper_bit_flipped = false;
 	    }
@@ -680,12 +667,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	/* Uncomment to print the bitstream to stdout */
 	    }
 
-    bits_t one = 1;
     /* Process the upper and lower codes */
     if (tc->forwards) {
         if (tc->reading_type == UPPER_READING) {
                 tc->upper_timecode = fwd(tc->upper_timecode, tc->def);
-                tc->upper_bitstream = (tc->upper_bitstream >> one) + (tc->upper_bit << (tc->def->bits - one));
+                tc->upper_bitstream = (tc->upper_bitstream >> (bits_t)1) + (tc->upper_bit << (tc->def->bits - (bits_t)1));
                 if (tc->upper_timecode == tc->upper_bitstream) {
                         tc->upper_valid_counter++;
                     } else {
@@ -695,7 +681,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 	} else {
                 tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
-                tc->lower_bitstream = (tc->lower_bitstream >> one) + (tc->lower_bit << (tc->def->bits - one));
+                tc->lower_bitstream = (tc->lower_bitstream >> (bits_t)1) + (tc->lower_bit << (tc->def->bits - (bits_t)1));
                 if (tc->lower_timecode == tc->lower_bitstream) {
                         tc->lower_valid_counter++;
                     } else {
@@ -715,11 +701,11 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             /* printf("upper_valid_counter = %d, lower_valid_counter = %d\n", tc->upper_valid_counter, tc->lower_valid_counter); */
     } else {
 
-        bits_t mask = ((one << tc->def->bits) - one);
+        bits_t mask = (((bits_t)1 << tc->def->bits) - (bits_t)1);
 
         if (tc->reading_type == UPPER_READING) {
                 tc->upper_timecode = rev(tc->upper_timecode, tc->def);
-                tc->upper_bitstream = ((tc->upper_bitstream << one) & mask) + tc->upper_bit;
+                tc->upper_bitstream = ((tc->upper_bitstream << (bits_t)1) & mask) + tc->upper_bit;
                 if (tc->upper_timecode == tc->upper_bitstream) {
                         tc->upper_valid_counter++;
                     } else {
@@ -728,7 +714,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     }
         } else {
                 tc->lower_timecode = rev(tc->lower_timecode, tc->def);
-                tc->lower_bitstream = ((tc->lower_bitstream << one) & mask) + tc->lower_bit;
+                tc->lower_bitstream = ((tc->lower_bitstream << (bits_t)1) & mask) + tc->lower_bit;
                 if (tc->lower_timecode == tc->lower_bitstream) {
                         tc->lower_valid_counter++;
                     } else {
