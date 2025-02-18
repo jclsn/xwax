@@ -452,7 +452,6 @@ static void init_channel(struct timecoder *tc, struct timecoder_channel *ch)
 
     if (tc->def->flags & OFFSET_MODULATION) {
         delayline_init(&ch->delayline);
-        delayline_init(&ch->envelope_heights);
         ch->ref_level = 0;
     }
     ch->upper_slope = 0;
@@ -618,40 +617,6 @@ static void update_monitor(struct timecoder *tc, signed int x, signed int y)
     tc->mon[py * size + px] = 0xff; /* white */
 }
 
-/*
- * Detect if the Traktor MK2 signal offset jumped up or down
- */
-#define NO_JUMP     0
-#define JUMPED_UP   1
-#define JUMPED_DOWN 2
-#define UPPER_READING 0
-#define LOWER_READING 1
-static int detect_offset_jump(int reading, int *last_reading, int threshold, int reading_type)
-{
-    /* Calculate the slope */
-    int slope = reading - *last_reading;
-    *last_reading = reading;
-    // int lower_threshold = threshold * 1.3; // works better for forwards
-    int lower_threshold = threshold * 1;
-
-    /* Define jump constraints */
-    if (reading_type == UPPER_READING) {
-        if (slope > threshold && reading > threshold * 2)
-            return JUMPED_UP;
-        else if (slope < -threshold && (reading < threshold * 2 || reading < 0) )
-            return JUMPED_DOWN;
-        else
-            return NO_JUMP;
-    } else {
-        if (slope > lower_threshold && (reading > -lower_threshold * 2 || reading > 0) )
-            return JUMPED_UP;
-        else if (slope < -lower_threshold && reading < lower_threshold * 2)
-            return JUMPED_DOWN;
-        else
-            return NO_JUMP;
-    }
-}
-
 // Print a uint128 value in binary format.
 void bits_t_print_binary(bits_t a) {
         for (int i = 109; i >= 0; i--) 
@@ -659,59 +624,8 @@ void bits_t_print_binary(bits_t a) {
     printf("\n");
 }
 
-/*
- * Extract the bitstream from the sample value
- */
-static void get_envelope_heights(struct timecoder *tc, signed int reading)
-{
-    /* 
-     * Work out envelope height for both channels:
-     *
-     * The envelope height is the distance from the highest to lowest peak of the signal.
-     * Since the signal jumps up and down the ref_level can't be used here.
-     * If the signal jumps up envelope_height / MK2_OFFSET factor, a jump up is detected
-     * and vice versa for the jump down.
-     */
-
-    if (tc->primary.swapped && !tc->primary.positive) {
-        tc->primary.upper_reading = reading;
-#ifdef MK2_PLOT
-        mk2_signal.primary.reflevel = tc->primary.ref_level;
-        if (tc->forwards)
-            mk2_signal.primary.upper_reading = tc->primary.upper_reading;
-#endif
-    } else if (tc->primary.swapped && tc->primary.positive) {
-        tc->primary.lower_reading = reading;
-
-        delayline_push(&tc->primary.envelope_heights, envelope_height(tc->primary.lower_reading, tc->primary.upper_reading));
-        tc->primary.avg_envelope_height = delayline_avg(&tc->primary.envelope_heights);
-        tc->primary.offset_threshold = tc->primary.avg_envelope_height / MK2_OFFSET_FACTOR;
-#ifdef MK2_PLOT
-        mk2_signal.primary.reflevel = tc->primary.ref_level;
-        if (tc->forwards)
-            mk2_signal.primary.lower_reading = tc->primary.lower_reading;
-#endif
-    } else if (tc->secondary.swapped && !tc->secondary.positive) {
-        tc->secondary.upper_reading = reading;
-#ifdef MK2_PLOT
-        mk2_signal.secondary.reflevel = tc->secondary.ref_level;
-        if (!tc->forwards)
-            mk2_signal.secondary.upper_reading = tc->secondary.upper_reading;
-#endif
-    } else if (tc->secondary.swapped && tc->secondary.positive) {
-        tc->secondary.lower_reading = reading;
-
-        delayline_push(&tc->secondary.envelope_heights, envelope_height(tc->secondary.lower_reading, tc->secondary.upper_reading));
-        tc->secondary.avg_envelope_height = delayline_avg(&tc->secondary.envelope_heights);
-        tc->secondary.offset_threshold = tc->secondary.avg_envelope_height / MK2_OFFSET_FACTOR;
-#ifdef MK2_PLOT
-        mk2_signal.secondary.reflevel = tc->secondary.ref_level;
-        if (!tc->forwards)
-            mk2_signal.secondary.lower_reading = tc->secondary.lower_reading;
-#endif
-    }
-}
-
+#define UPPER_READING 0
+#define LOWER_READING 1
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     int primary_reading;
@@ -739,28 +653,20 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     if (primary->swapped && primary->positive)  {
 	    tc->primary.lower_slope =
 		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
-	    primary->jump_lower = detect_offset_jump(primary_reading,
-						     &primary->last_lower_reading,
-						     primary->offset_threshold,
-						     LOWER_READING);
+            primary->last_lower_reading = primary_reading;
+
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
 	    tc->primary.upper_slope =
 		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
 
-	    primary->jump_upper = detect_offset_jump(primary_reading,
-						     &primary->last_upper_reading,
-						     primary->offset_threshold,
-						     UPPER_READING);
+            primary->last_upper_reading = primary_reading;
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
             float current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
 	    tc->secondary.lower_slope =
                 ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
-	    secondary->jump_lower = detect_offset_jump(secondary_reading,
-						       &secondary->last_lower_reading,
-						       secondary->offset_threshold,
-						       LOWER_READING);
+            secondary->last_lower_reading = secondary_reading;
 
 	    if (!tc->lower_just_flipped) {
 		    if (current_slope > (float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
@@ -794,11 +700,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             float current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
 	    tc->secondary.upper_slope =
             ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
-	    secondary->jump_upper = detect_offset_jump(secondary_reading,
-						       &secondary->last_upper_reading,
-						       secondary->offset_threshold,
-						       UPPER_READING);
-
+            secondary->last_upper_reading = secondary_reading;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
 	    if (!tc->upper_just_flipped) {
@@ -1061,11 +963,9 @@ static void process_sample(struct timecoder *tc,
 	if (tc->def->flags & OFFSET_MODULATION) {
 		if (tc->primary.swapped) {
 			signed int reading = *delayline_at_index(&tc->primary.delayline, FILTER_DELAY);
-                        get_envelope_heights(tc, reading);
 			process_mk2_bitstream(tc, reading);
 		} else if (tc->secondary.swapped) {
 			signed int reading = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
-                        get_envelope_heights(tc, reading);
 			process_mk2_bitstream(tc, reading);
                 }
 	} else {

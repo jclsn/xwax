@@ -67,9 +67,7 @@ struct timecoder_channel {
 
     /* For MK2 demodulation */
     struct delayline delayline;
-    struct delayline envelope_heights;
 
-    unsigned int avg_envelope_height, offset_threshold;
     int last_upper_reading, last_lower_reading;
     int jump_upper, jump_lower;
     int lower_reading, upper_reading;
@@ -179,18 +177,6 @@ static inline double timecoder_get_resolution(struct timecoder *tc)
 static inline double timecoder_revs_per_sec(struct timecoder *tc)
 {
     return (33.0 + 1.0 / 3) * tc->speed / 60;
-}
-
-static inline unsigned int envelope_height(signed int lower_reading, signed int upper_reading)
-{
-    unsigned int envelope = 0;
-
-    if (upper_reading > 0 && lower_reading < 0)
-        envelope =  (abs(upper_reading) + abs(lower_reading));
-    if (upper_reading > 0 && lower_reading > 0)
-        envelope =  (abs(upper_reading) - abs(lower_reading));
-
-    return envelope;
 }
 
 #endif
