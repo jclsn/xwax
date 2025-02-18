@@ -598,33 +598,26 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             primary->last_upper_reading = primary_reading;
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
+	    tc->secondary.lower_slope = ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
             float current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
-	    tc->secondary.lower_slope =
-                ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
             secondary->last_lower_reading = secondary_reading;
 
 	    if (!tc->lower_bit_flipped) {
 		    if (tc->forwards) {
-			    if (current_slope >
-					(float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
-				tc->lower_bit == 1) {
+                            float last_slope = (float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX;
+			    if (current_slope > last_slope && tc->lower_bit == 1) {
 				    tc->lower_bit = 0;
 				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < (float)-FORWARD_FACTOR *
-							       secondary->lower_slope / INT_MAX &&
-				       tc->lower_bit == 0) {
+			    } else if (current_slope < -last_slope && tc->lower_bit == 0) {
 				    tc->lower_bit = 1;
 				    tc->lower_bit_flipped = true;
 			    }
 		    } else {
-			    if (current_slope >
-					(float)REVERSE_FACTOR * secondary->lower_slope / INT_MAX &&
-				tc->lower_bit == 0) {
+                            float last_slope = (float)REVERSE_FACTOR * secondary->lower_slope / INT_MAX;
+			    if (current_slope > last_slope && tc->lower_bit == 0) {
 				    tc->lower_bit = 1;
 				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < (float)-REVERSE_FACTOR *
-							       secondary->lower_slope / INT_MAX &&
-				       tc->lower_bit == 1) {
+			    } else if (current_slope < -last_slope && tc->lower_bit == 1) {
 				    tc->lower_bit = 0;
 				    tc->lower_bit_flipped = true;
 			    }
@@ -637,34 +630,29 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             tc->reading_type = LOWER_READING;
 
     } else if (secondary->swapped && !secondary->positive)  {
+	    tc->secondary.upper_slope = ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
             float current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
-	    tc->secondary.upper_slope =
-            ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
             secondary->last_upper_reading = secondary_reading;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
 	    if (!tc->upper_bit_flipped) {
 		    if (tc->forwards) {
-			    if (current_slope >
-					(float)FORWARD_FACTOR * secondary->upper_slope / INT_MAX &&
-				tc->upper_bit == 0) {
+                            float last_slope = (float)FORWARD_FACTOR * secondary->upper_slope / INT_MAX;
+
+			    if (current_slope > last_slope && tc->upper_bit == 0) {
 				    tc->upper_bit = 1;
 				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < (float)-FORWARD_FACTOR *
-							       secondary->upper_slope / INT_MAX &&
-				       tc->upper_bit == 1) {
+			    } else if (current_slope < -last_slope && tc->upper_bit == 1) {
 				    tc->upper_bit = 0;
 				    tc->upper_bit_flipped = true;
 			    }
 		    } else {
-			    if (current_slope >
-					(float)REVERSE_FACTOR * secondary->upper_slope / INT_MAX &&
-				tc->upper_bit == 1) {
+                            float last_slope = (float)REVERSE_FACTOR * secondary->upper_slope / INT_MAX;
+
+			    if (current_slope > last_slope && tc->upper_bit == 1) {
 				    tc->upper_bit = 0;
 				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < (float)-REVERSE_FACTOR *
-							       secondary->upper_slope / INT_MAX &&
-				       tc->upper_bit == 0) {
+			    } else if (current_slope < -last_slope && tc->upper_bit == 0) {
 				    tc->upper_bit = 1;
 				    tc->upper_bit_flipped = true;
 			    }
