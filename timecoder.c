@@ -590,12 +590,16 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
             primary->last_lower_reading = primary_reading;
 
+            /* TODO: Also process primary bitstream */
+
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
 	    tc->primary.upper_slope =
 		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
-
             primary->last_upper_reading = primary_reading;
+
+            /* TODO: Also process primary bitstream */
+
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
 	    tc->secondary.lower_slope = ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
