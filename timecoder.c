@@ -604,25 +604,30 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             secondary->last_lower_reading = secondary_reading;
 
 	    if (!tc->lower_just_flipped) {
-		    if (current_slope > (float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
-			tc->forwards && tc->lower_bit == 1) {
-			    tc->lower_bit = 0;
-			    tc->lower_just_flipped = true;
-		    } else if (current_slope >
-				       (float)REVERSE_FACTOR * secondary->lower_slope / INT_MAX &&
-			       !tc->forwards && tc->lower_bit == 0) {
-			    tc->lower_bit = 1;
-			    tc->lower_just_flipped = true;
-		    } else if (current_slope <
-				       (float)-FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
-			       tc->forwards && tc->lower_bit == 0) {
-			    tc->lower_bit = 1;
-			    tc->lower_just_flipped = true;
-		    } else if (current_slope <
-				       (float)-REVERSE_FACTOR * secondary->lower_slope / INT_MAX &&
-			       !tc->forwards && tc->lower_bit == 1) {
-			    tc->lower_bit = 0;
-			    tc->lower_just_flipped = true;
+		    if (tc->forwards) {
+			    if (current_slope >
+					(float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
+				tc->lower_bit == 1) {
+				    tc->lower_bit = 0;
+				    tc->lower_just_flipped = true;
+			    } else if (current_slope < (float)-FORWARD_FACTOR *
+							       secondary->lower_slope / INT_MAX &&
+				       tc->lower_bit == 0) {
+				    tc->lower_bit = 1;
+				    tc->lower_just_flipped = true;
+			    }
+		    } else {
+			    if (current_slope >
+					(float)REVERSE_FACTOR * secondary->lower_slope / INT_MAX &&
+				tc->lower_bit == 0) {
+				    tc->lower_bit = 1;
+				    tc->lower_just_flipped = true;
+			    } else if (current_slope < (float)-REVERSE_FACTOR *
+							       secondary->lower_slope / INT_MAX &&
+				       tc->lower_bit == 1) {
+				    tc->lower_bit = 0;
+				    tc->lower_just_flipped = true;
+			    }
 		    }
 	    } else {
 		    tc->lower_just_flipped = false;
@@ -639,29 +644,34 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
 	    if (!tc->upper_just_flipped) {
-		    if (current_slope > (float)FORWARD_FACTOR * secondary->upper_slope / INT_MAX &&
-			tc->forwards && tc->upper_bit == 0) {
-			    tc->upper_bit = 1;
-			    tc->upper_just_flipped = true;
-		    } else if (current_slope >
-				       (float)REVERSE_FACTOR * secondary->upper_slope / INT_MAX &&
-			       !tc->forwards && tc->upper_bit == 1) {
-			    tc->upper_bit = 0;
-			    tc->upper_just_flipped = true;
-		    } else if (current_slope <
-				       (float)-FORWARD_FACTOR * secondary->upper_slope / INT_MAX &&
-			       tc->forwards && tc->upper_bit == 1) {
-			    tc->upper_bit = 0;
-			    tc->upper_just_flipped = true;
-		    } else if (current_slope <
-				       (float)-REVERSE_FACTOR * secondary->upper_slope / INT_MAX &&
-			       !tc->forwards && tc->upper_bit == 0) {
-			    tc->upper_bit = 1;
-			    tc->upper_just_flipped = true;
+		    if (tc->forwards) {
+			    if (current_slope >
+					(float)FORWARD_FACTOR * secondary->upper_slope / INT_MAX &&
+				tc->upper_bit == 0) {
+				    tc->upper_bit = 1;
+				    tc->upper_just_flipped = true;
+			    } else if (current_slope < (float)-FORWARD_FACTOR *
+							       secondary->upper_slope / INT_MAX &&
+				       tc->upper_bit == 1) {
+				    tc->upper_bit = 0;
+				    tc->upper_just_flipped = true;
+			    }
+		    } else {
+			    if (current_slope >
+					(float)REVERSE_FACTOR * secondary->upper_slope / INT_MAX &&
+				tc->upper_bit == 1) {
+				    tc->upper_bit = 0;
+				    tc->upper_just_flipped = true;
+			    } else if (current_slope < (float)-REVERSE_FACTOR *
+							       secondary->upper_slope / INT_MAX &&
+				       tc->upper_bit == 0) {
+				    tc->upper_bit = 1;
+				    tc->upper_just_flipped = true;
+			    }
 		    }
 	    } else {
 		    tc->upper_just_flipped = false;
-            }
+	    }
 
 		    /* printf("%d", (int)tc->upper_bit & 1); */
 		    tc->reading_type = UPPER_READING;
