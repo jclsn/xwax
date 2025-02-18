@@ -99,7 +99,7 @@ struct timecoder {
     bits_t upper_bitstream, lower_bitstream, upper_bitstream2, lower_bitstream2;
     bits_t upper_timecode, lower_timecode, upper_timecode2, lower_timecode2;
     unsigned int upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2;
-    bool lower_just_flipped, upper_just_flipped;
+    bool lower_bit_flipped, upper_bit_flipped;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);

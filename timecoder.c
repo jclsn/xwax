@@ -603,34 +603,34 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
             secondary->last_lower_reading = secondary_reading;
 
-	    if (!tc->lower_just_flipped) {
+	    if (!tc->lower_bit_flipped) {
 		    if (tc->forwards) {
 			    if (current_slope >
 					(float)FORWARD_FACTOR * secondary->lower_slope / INT_MAX &&
 				tc->lower_bit == 1) {
 				    tc->lower_bit = 0;
-				    tc->lower_just_flipped = true;
+				    tc->lower_bit_flipped = true;
 			    } else if (current_slope < (float)-FORWARD_FACTOR *
 							       secondary->lower_slope / INT_MAX &&
 				       tc->lower_bit == 0) {
 				    tc->lower_bit = 1;
-				    tc->lower_just_flipped = true;
+				    tc->lower_bit_flipped = true;
 			    }
 		    } else {
 			    if (current_slope >
 					(float)REVERSE_FACTOR * secondary->lower_slope / INT_MAX &&
 				tc->lower_bit == 0) {
 				    tc->lower_bit = 1;
-				    tc->lower_just_flipped = true;
+				    tc->lower_bit_flipped = true;
 			    } else if (current_slope < (float)-REVERSE_FACTOR *
 							       secondary->lower_slope / INT_MAX &&
 				       tc->lower_bit == 1) {
 				    tc->lower_bit = 0;
-				    tc->lower_just_flipped = true;
+				    tc->lower_bit_flipped = true;
 			    }
 		    }
 	    } else {
-		    tc->lower_just_flipped = false;
+		    tc->lower_bit_flipped = false;
 	    }
 
 	    /* printf("%d", (int) ~tc->lower_bit & 1); */
@@ -643,34 +643,34 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             secondary->last_upper_reading = secondary_reading;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-	    if (!tc->upper_just_flipped) {
+	    if (!tc->upper_bit_flipped) {
 		    if (tc->forwards) {
 			    if (current_slope >
 					(float)FORWARD_FACTOR * secondary->upper_slope / INT_MAX &&
 				tc->upper_bit == 0) {
 				    tc->upper_bit = 1;
-				    tc->upper_just_flipped = true;
+				    tc->upper_bit_flipped = true;
 			    } else if (current_slope < (float)-FORWARD_FACTOR *
 							       secondary->upper_slope / INT_MAX &&
 				       tc->upper_bit == 1) {
 				    tc->upper_bit = 0;
-				    tc->upper_just_flipped = true;
+				    tc->upper_bit_flipped = true;
 			    }
 		    } else {
 			    if (current_slope >
 					(float)REVERSE_FACTOR * secondary->upper_slope / INT_MAX &&
 				tc->upper_bit == 1) {
 				    tc->upper_bit = 0;
-				    tc->upper_just_flipped = true;
+				    tc->upper_bit_flipped = true;
 			    } else if (current_slope < (float)-REVERSE_FACTOR *
 							       secondary->upper_slope / INT_MAX &&
 				       tc->upper_bit == 0) {
 				    tc->upper_bit = 1;
-				    tc->upper_just_flipped = true;
+				    tc->upper_bit_flipped = true;
 			    }
 		    }
 	    } else {
-		    tc->upper_just_flipped = false;
+		    tc->upper_bit_flipped = false;
 	    }
 
 		    /* printf("%d", (int)tc->upper_bit & 1); */
