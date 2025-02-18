@@ -30,19 +30,6 @@
 
 #define TIMECODER_CHANNELS 2
 
-struct lfsr {
-        /* LFSR states */
-        bits_t current;
-        bits_t next;
-        bits_t last;
-
-        /* LFSR definition */
-        bits_t seed;
-        bits_t seed2;
-        bits_t taps;
-        bits_t bits;
-};
-
 struct timecode_def {
     const char *name, *desc;
     int bits, /* number of bits in string */
@@ -54,7 +41,6 @@ struct timecode_def {
         safe; /* last 'safe' timecode number (for auto disconnect) */
     bool lookup; /* true if lut has been generated */
     struct lut lut;
-    struct lfsr lfsr1, lfsr2;
 };
 
 struct timecoder_channel {
