@@ -609,21 +609,23 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 	    if (!tc->lower_bit_flipped) {
 		    if (tc->forwards) {
+                            bits_t one = 0;
                             float threshold = FORWARD_FACTOR * last_slope;
-			    if (current_slope > threshold && tc->lower_bit == 1) {
-				    tc->lower_bit = 0;
+			    if (current_slope > threshold && tc->lower_bit == !one) {
+				    tc->lower_bit = one;
 				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->lower_bit == 0) {
-				    tc->lower_bit = 1;
+			    } else if (current_slope < -threshold && tc->lower_bit == one) {
+				    tc->lower_bit = !one;
 				    tc->lower_bit_flipped = true;
 			    }
 		    } else {
+                            bits_t one = 1;
                             float threshold = REVERSE_FACTOR * last_slope;
-			    if (current_slope > threshold && tc->lower_bit == 0) {
-				    tc->lower_bit = 1;
+			    if (current_slope > threshold && tc->lower_bit == !one) {
+				    tc->lower_bit = one;
 				    tc->lower_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->lower_bit == 1) {
-				    tc->lower_bit = 0;
+			    } else if (current_slope < -threshold && tc->lower_bit == one) {
+				    tc->lower_bit = !one;
 				    tc->lower_bit_flipped = true;
 			    }
 		    }
@@ -643,23 +645,25 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
 	    if (!tc->upper_bit_flipped) {
 		    if (tc->forwards) {
+                            bits_t one = 1;
                             float threshold = FORWARD_FACTOR * last_slope;
 
-			    if (current_slope > threshold && tc->upper_bit == 0) {
-				    tc->upper_bit = 1;
+			    if (current_slope > threshold && tc->upper_bit == !one) {
+				    tc->upper_bit = one;
 				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->upper_bit == 1) {
-				    tc->upper_bit = 0;
+			    } else if (current_slope < -threshold && tc->upper_bit == one) {
+				    tc->upper_bit = !one;
 				    tc->upper_bit_flipped = true;
 			    }
 		    } else {
+                            bits_t one = 0;
                             float threshold = REVERSE_FACTOR * last_slope;
 
-			    if (current_slope > threshold && tc->upper_bit == 1) {
-				    tc->upper_bit = 0;
+			    if (current_slope > threshold && tc->upper_bit == !one) {
+				    tc->upper_bit = one;
 				    tc->upper_bit_flipped = true;
-			    } else if (current_slope < -threshold && tc->upper_bit == 0) {
-				    tc->upper_bit = 1;
+			    } else if (current_slope < -threshold && tc->upper_bit == one) {
+				    tc->upper_bit = !one;
 				    tc->upper_bit_flipped = true;
 			    }
 		    }
