@@ -559,9 +559,20 @@ void bits_t_print_binary(bits_t a) {
     printf("\n");
 }
 
-void detect_bit_flip(float slope, float threshold, bits_t *bit, bool *bit_flipped, bits_t one)
+#define FORWARD_FACTOR 2
+#define REVERSE_FACTOR 1.75
+void detect_bit_flip(float slope, float last_slope, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
 {
+    float threshold;
+
     if (*bit_flipped == false) {
+
+        if (forwards) {
+                threshold = FORWARD_FACTOR * last_slope;
+        } else {
+                threshold = REVERSE_FACTOR * last_slope;
+                one = !one;
+        }
 
 	if (slope > threshold && *bit == !one) {
 		*bit = one;
@@ -581,7 +592,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     struct timecoder_channel *primary, *secondary;
     int primary_reading, secondary_reading;
-    float threshold, current_slope, last_slope;
+    float current_slope, last_slope;
     bits_t one;
 
         primary = &tc->primary;
@@ -599,8 +610,6 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
      * Detect if the offset jumps up or down on primary or secondary channel.
      * Both channels are checked to increase accuracy
      */
-#define FORWARD_FACTOR 2
-#define REVERSE_FACTOR 1.75
     if (primary->swapped && primary->positive)  {
 	    tc->primary.lower_slope =
 		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
@@ -622,16 +631,9 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
             secondary->last_lower_reading = secondary_reading;
             last_slope = (float) secondary->lower_slope / INT_MAX;
+            one = 0;
 
-            if (tc->forwards) {
-                    one = 0;
-                    threshold = FORWARD_FACTOR * last_slope;
-            } else {
-                    one = 1;
-                    threshold = REVERSE_FACTOR * last_slope;
-            }
-
-            detect_bit_flip(current_slope, threshold, &tc->lower_bit, &tc->lower_bit_flipped, one);
+            detect_bit_flip(current_slope, last_slope, &tc->lower_bit, &tc->lower_bit_flipped, tc->forwards, one);
 
 	    /* printf("%d", (int) ~tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
@@ -641,26 +643,20 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
             secondary->last_upper_reading = secondary_reading;
             last_slope = (float) secondary->upper_slope / INT_MAX;
+            one = 1;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-            if (tc->forwards) {
-                    one = 1;
-                    threshold = FORWARD_FACTOR * last_slope;
-            } else {
-                    one = 0;
-                    threshold = REVERSE_FACTOR * last_slope;
-            }
+            detect_bit_flip(current_slope, last_slope, &tc->upper_bit, &tc->upper_bit_flipped, tc->forwards, one);
 
-            detect_bit_flip(current_slope, threshold, &tc->upper_bit, &tc->upper_bit_flipped, one);
+            tc->reading_type = UPPER_READING;
 
-		    /* printf("%d", (int)tc->upper_bit & 1); */
-		    tc->reading_type = UPPER_READING;
+	    /* Uncomment to print the bitstream to stdout */
+            /* printf("%d", (int)tc->upper_bit & 1); */
+
 #ifdef MK2_PLOT
-        mk2_signal.plot_digit = 1;
+            mk2_signal.plot_digit = 1;
 #endif
-
-	/* Uncomment to print the bitstream to stdout */
-	    }
+    }
 
     /* Process the upper and lower codes */
     if (tc->forwards) {
