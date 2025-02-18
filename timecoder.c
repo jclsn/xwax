@@ -389,8 +389,8 @@ static void init_channel(struct timecoder *tc, struct timecoder_channel *ch)
         delayline_init(&ch->delayline);
         ch->ref_level = 0;
     }
-    ch->upper_slope = 0;
-    ch->lower_slope = 0;
+    ch->upper_avg_slope = 0;
+    ch->lower_avg_slope = 0;
 }
 
 /*
@@ -611,39 +611,60 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
      * Both channels are checked to increase accuracy
      */
     if (primary->swapped && primary->positive)  {
-	    tc->primary.lower_slope =
-		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
-            primary->last_lower_reading = primary_reading;
+            /* Calculate absolute of lower average slope */
+	    tc->primary.lower_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading),
+					  &tc->primary.upper_avg_slope,
+					  0.01);
+
+	    primary->last_lower_reading = primary_reading;
 
             /* TODO: Also process primary bitstream */
 
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
-	    tc->primary.upper_slope =
-		    ema(abs(primary_reading - tc->primary.last_upper_reading), &tc->primary.upper_slope, 0.01);
-            primary->last_upper_reading = primary_reading;
+            /* Calculate absolute of upper average slope */
+	    tc->primary.upper_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading),
+					  &tc->primary.upper_avg_slope,
+					  0.01);
+
+	    primary->last_upper_reading = primary_reading;
 
             /* TODO: Also process primary bitstream */
 
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
-	    tc->secondary.lower_slope = ema(abs(secondary_reading - tc->secondary.last_lower_reading), &tc->secondary.lower_slope, 0.01);
-            current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
-            secondary->last_lower_reading = secondary_reading;
-            last_slope = (float) secondary->lower_slope / INT_MAX;
-            one = 0;
+            /* Calculate absolute of lower average slope */
+	    tc->secondary.lower_avg_slope =
+		    ema(abs(secondary_reading - tc->secondary.last_lower_reading),
+			&tc->secondary.lower_avg_slope,
+			0.01);
 
+            /* Calculate current and last slope */
+	    current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
+            last_slope = (float) secondary->lower_avg_slope / INT_MAX;
+
+            secondary->last_lower_reading = secondary_reading; // Update last lower reading
+            one = 0; // If the signal polarity is flipped
+
+	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(current_slope, last_slope, &tc->lower_bit, &tc->lower_bit_flipped, tc->forwards, one);
 
 	    /* printf("%d", (int) ~tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
 
     } else if (secondary->swapped && !secondary->positive)  {
-	    tc->secondary.upper_slope = ema(abs(secondary_reading - tc->secondary.last_upper_reading), &tc->secondary.upper_slope, 0.01);
-            current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
-            secondary->last_upper_reading = secondary_reading;
-            last_slope = (float) secondary->upper_slope / INT_MAX;
-            one = 1;
+            /* Calculate absolute of upper average slope */
+	    tc->secondary.upper_avg_slope =
+		    ema(abs(secondary_reading - tc->secondary.last_upper_reading),
+			&tc->secondary.upper_avg_slope,
+			0.01);
+
+            /* Calculate current and last slope */
+	    current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
+            last_slope = (float) secondary->upper_avg_slope / INT_MAX;
+
+            secondary->last_upper_reading = secondary_reading; // Update last upper reading
+            one = 1; // If the signal polarity is normal
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(current_slope, last_slope, &tc->upper_bit, &tc->upper_bit_flipped, tc->forwards, one);
