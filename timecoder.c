@@ -559,6 +559,22 @@ void bits_t_print_binary(bits_t a) {
     printf("\n");
 }
 
+void detect_bit_flip(float slope, float threshold, bits_t *bit, bool *bit_flipped, bits_t one)
+{
+    if (*bit_flipped == false) {
+
+	if (slope > threshold && *bit == !one) {
+		*bit = one;
+		*bit_flipped = true;
+	} else if (slope < -threshold && *bit == one) {
+		*bit = !one;
+		*bit_flipped = true;
+	}
+    } else {
+        *bit_flipped = false;
+    }
+}
+
 #define UPPER_READING 0
 #define LOWER_READING 1
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
@@ -607,25 +623,15 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             secondary->last_lower_reading = secondary_reading;
             last_slope = (float) secondary->lower_slope / INT_MAX;
 
-	    if (!tc->lower_bit_flipped) {
-		    if (tc->forwards) {
-                            one = 0;
-                            threshold = FORWARD_FACTOR * last_slope;
-                    } else {
-                            one = 1;
-                            threshold = REVERSE_FACTOR * last_slope;
-                    }
+            if (tc->forwards) {
+                    one = 0;
+                    threshold = FORWARD_FACTOR * last_slope;
+            } else {
+                    one = 1;
+                    threshold = REVERSE_FACTOR * last_slope;
+            }
 
-                    if (current_slope > threshold && tc->lower_bit == !one) {
-                            tc->lower_bit = one;
-                            tc->lower_bit_flipped = true;
-                    } else if (current_slope < -threshold && tc->lower_bit == one) {
-                            tc->lower_bit = !one;
-                            tc->lower_bit_flipped = true;
-                    }
-	    } else {
-		    tc->lower_bit_flipped = false;
-	    }
+            detect_bit_flip(current_slope, threshold, &tc->lower_bit, &tc->lower_bit_flipped, one);
 
 	    /* printf("%d", (int) ~tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
@@ -637,26 +643,15 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             last_slope = (float) secondary->upper_slope / INT_MAX;
 
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-	    if (!tc->upper_bit_flipped) {
-		    if (tc->forwards) {
-                            one = 1;
-                            threshold = FORWARD_FACTOR * last_slope;
-                    } else {
-                            one = 0;
-                            threshold = REVERSE_FACTOR * last_slope;
-                    }
+            if (tc->forwards) {
+                    one = 1;
+                    threshold = FORWARD_FACTOR * last_slope;
+            } else {
+                    one = 0;
+                    threshold = REVERSE_FACTOR * last_slope;
+            }
 
-                    if (current_slope > threshold && tc->upper_bit == !one) {
-                            tc->upper_bit = one;
-                            tc->upper_bit_flipped = true;
-                    } else if (current_slope < -threshold && tc->upper_bit == one) {
-                            tc->upper_bit = !one;
-                            tc->upper_bit_flipped = true;
-                    }
-
-	    } else {
-		    tc->upper_bit_flipped = false;
-	    }
+            detect_bit_flip(current_slope, threshold, &tc->upper_bit, &tc->upper_bit_flipped, one);
 
 		    /* printf("%d", (int)tc->upper_bit & 1); */
 		    tc->reading_type = UPPER_READING;
