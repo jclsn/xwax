@@ -560,8 +560,8 @@ void bits_t_print_binary(bits_t a) {
 }
 
 #define FORWARD_FACTOR 2
-#define REVERSE_FACTOR 1.75
-void detect_bit_flip(float slope, float last_slope, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
+#define REVERSE_FACTOR 1.65
+void detect_bit_flip(bool over_mean, float slope, float last_slope, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
 {
     float threshold;
 
@@ -574,10 +574,10 @@ void detect_bit_flip(float slope, float last_slope, bits_t *bit, bool *bit_flipp
                 one = !one;
         }
 
-	if (slope > threshold && *bit == !one) {
+	if (slope > threshold && over_mean && *bit == !one) {
 		*bit = one;
 		*bit_flipped = true;
-	} else if (slope < -threshold && *bit == one) {
+	} else if (slope < -threshold && !over_mean && *bit == one) {
 		*bit = !one;
 		*bit_flipped = true;
 	}
@@ -643,11 +643,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	    current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
             last_slope = (float) secondary->lower_avg_slope / INT_MAX;
 
+            int mean = (tc->secondary.last_upper_reading + abs(tc->secondary.last_lower_reading)) / 2;
             secondary->last_lower_reading = secondary_reading; // Update last lower reading
             one = 0; // If the signal polarity is flipped
 
+            bool over_mean = reading > - mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-            detect_bit_flip(current_slope, last_slope, &tc->lower_bit, &tc->lower_bit_flipped, tc->forwards, one);
+            detect_bit_flip(over_mean, current_slope, last_slope, &tc->lower_bit, &tc->lower_bit_flipped, tc->forwards, one);
 
 	    /* printf("%d", (int) ~tc->lower_bit & 1); */
             tc->reading_type = LOWER_READING;
@@ -663,11 +665,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	    current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
             last_slope = (float) secondary->upper_avg_slope / INT_MAX;
 
+            int mean = (tc->secondary.last_upper_reading + abs(tc->secondary.last_lower_reading)) / 2;
             secondary->last_upper_reading = secondary_reading; // Update last upper reading
             one = 1; // If the signal polarity is normal
 
+            bool over_mean = reading > mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
-            detect_bit_flip(current_slope, last_slope, &tc->upper_bit, &tc->upper_bit_flipped, tc->forwards, one);
+            detect_bit_flip(over_mean, current_slope, last_slope, &tc->upper_bit, &tc->upper_bit_flipped, tc->forwards, one);
 
             tc->reading_type = UPPER_READING;
 
