@@ -57,6 +57,7 @@ struct timecoder_channel {
     int last_upper_reading, last_lower_reading;
     int jump_upper, jump_lower;
     int lower_reading, upper_reading;
+    int avg_upper_reading, avg_lower_reading;
     int deriv, deriv_old;
     int ema, ema_old;
     int ema2, ema_old2;
