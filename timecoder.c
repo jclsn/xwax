@@ -94,7 +94,7 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 24
+#define VALID_BITS_TRAKTOR_MK2 1
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -759,10 +759,10 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                         tc->lower_valid_counter = 0;
                     }
         }
-        if (tc->upper_valid_counter > 5) {
+        if (tc->upper_valid_counter > 1) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > 5 ) {
+        } else if (tc->lower_valid_counter > 1 ) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
