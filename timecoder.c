@@ -48,7 +48,7 @@
  * Uncomment to use the plotting script 
  */
 
-#define MK2_PLOT
+/* #define MK2_PLOT */
 
 #ifdef MK2_PLOT
 #include <sys/stat.h>
@@ -565,7 +565,8 @@ void bits_t_print_binary(bits_t a) {
 }
 
 #define FORWARD_FACTOR 2
-#define REVERSE_FACTOR 1.65
+#define REVERSE_FACTOR 1.5
+#define AVG_FACTOR 1.0
 void detect_bit_flip(bool over_mean, float slope, float last_slope, int reading, int avg_reading, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
 {
     float threshold;
@@ -579,10 +580,10 @@ void detect_bit_flip(bool over_mean, float slope, float last_slope, int reading,
                 one = !one;
         }
 
-	if (*bit == !one && slope > threshold && over_mean && reading > avg_reading) {
+	if (*bit == !one && slope > threshold && reading > avg_reading) {
 		*bit = one;
 		*bit_flipped = true;
-	} else if (*bit == one && slope < -threshold && !over_mean && reading < avg_reading) {
+	} else if (*bit == one && slope < -threshold && reading < avg_reading) {
 		*bit = !one;
 		*bit_flipped = true;
 	}
@@ -608,8 +609,8 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
      * the current sample has to be taken
      */
 
-    primary_reading = *delayline_at_index(&primary->delayline, FILTER_DELAY) + 0.5 * tc->primary.deriv;
-    secondary_reading = *delayline_at_index(&secondary->delayline, FILTER_DELAY) + 0.5 * tc->secondary.deriv;
+    primary_reading = *delayline_at_index(&primary->delayline, FILTER_DELAY);
+    secondary_reading = *delayline_at_index(&secondary->delayline, FILTER_DELAY);
 
     /* 
      * Detect if the offset jumps up or down on primary or secondary channel.
@@ -658,7 +659,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             bool over_mean = reading > - mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(over_mean, current_slope, last_slope, reading, 
-                            tc->secondary.avg_lower_reading, &tc->lower_bit,
+                            tc->secondary.avg_lower_reading*AVG_FACTOR, &tc->lower_bit,
                             &tc->lower_bit_flipped, tc->forwards, one);
 
             /* printf("%d", (int) ~tc->lower_bit & 1); */
@@ -688,7 +689,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             bool over_mean = reading > mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(over_mean, current_slope, last_slope, reading, 
-                            tc->secondary.avg_upper_reading, &tc->upper_bit,
+                            tc->secondary.avg_upper_reading*AVG_FACTOR, &tc->upper_bit,
                             &tc->upper_bit_flipped, tc->forwards, one);
 
             tc->reading_type = UPPER_READING;
@@ -726,10 +727,10 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     }
         }
 
-        if (tc->upper_valid_counter > 5) {
+        if (tc->upper_valid_counter > 1) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > 5 ) {
+        } else if (tc->lower_valid_counter > 1 ) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
