@@ -48,7 +48,7 @@
  * Uncomment to use the plotting script 
  */
 
-/* #define MK2_PLOT */
+#define MK2_PLOT
 
 #ifdef MK2_PLOT
 #include <sys/stat.h>
@@ -59,6 +59,8 @@ struct channel {
     int avg_upper_reading;
     int avg_lower_reading;
     int deriv;
+    bool upper_code_correct;
+    bool lower_code_correct;
 };
 
 struct mk2_signal {
@@ -439,14 +441,7 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->mon = NULL;
 
     #ifdef MK2_PLOT
-    int r;
-    printf("Waiting for plotting program to read from the named pipe\n");
-    r = mkfifo(filepath, 0666);
-    if (r) {
-            perror("mkfifo");
-    }
-
-    fp = fopen(filepath, "a");
+    fp = fopen(filepath, "w");
     if (!fp) {
             perror("fopen");
             exit(-1);
@@ -731,7 +726,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 tc->upper_bitstream = (tc->upper_bitstream >> (bits_t)1) + (tc->upper_bit << (tc->def->bits - (bits_t)1));
                 if (tc->upper_timecode == tc->upper_bitstream) {
                         tc->upper_valid_counter++;
+#ifdef MK2_PLOT
+            mk2_signal.secondary.upper_code_correct = true;
+#endif
                     } else {
+#ifdef MK2_PLOT
+            mk2_signal.secondary.upper_code_correct = false;
+#endif
                         tc->upper_timecode = tc->upper_bitstream;
                         tc->upper_valid_counter = 0;
                     }
@@ -740,8 +741,14 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
                 tc->lower_bitstream = (tc->lower_bitstream >> (bits_t)1) + (tc->lower_bit << (tc->def->bits - (bits_t)1));
                 if (tc->lower_timecode == tc->lower_bitstream) {
+#ifdef MK2_PLOT
+            mk2_signal.secondary.lower_code_correct = true;
+#endif
                         tc->lower_valid_counter++;
                     } else {
+#ifdef MK2_PLOT
+            mk2_signal.secondary.lower_code_correct = false;
+#endif
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
                     }
