@@ -53,6 +53,7 @@ struct timecoder_channel {
 
     /* For MK2 demodulation */
     struct delayline delayline;
+    struct delayline delayline_deriv;
 
     int last_upper_reading[2], last_lower_reading[2];
     int jump_upper, jump_lower;
@@ -101,6 +102,7 @@ struct timecoder {
     bits_t upper_timecode, lower_timecode, upper_timecode2, lower_timecode2;
     unsigned int upper_valid_counter, lower_valid_counter, upper_valid_counter2, lower_valid_counter2;
     bool lower_bit_flipped, upper_bit_flipped;
+    int upper_corrected_bits, lower_corrected_bits;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);

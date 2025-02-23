@@ -48,7 +48,7 @@
  * Uncomment to use the plotting script 
  */
 
-#define MK2_PLOT
+/* #define MK2_PLOT */
 
 #ifdef MK2_PLOT
 #include <sys/stat.h>
@@ -59,8 +59,8 @@ struct channel {
     int avg_upper_reading;
     int avg_lower_reading;
     int deriv;
-    bool upper_code_correct;
-    bool lower_code_correct;
+    int upper_errors;
+    int lower_errors;
 };
 
 struct mk2_signal {
@@ -73,9 +73,11 @@ struct mk2_signal {
     int forwards;
 };
 
-char filepath[] = "/tmp/mk2_samples.out";
+char filepath[1024];
 FILE *fp = NULL;
 struct mk2_signal mk2_signal = {};
+int nwrites = 0;
+int T = 1;
 #endif
 
 #define ZERO_THRESHOLD (128 << 16)
@@ -96,8 +98,8 @@ struct mk2_signal mk2_signal = {};
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 1
-#define VALID_BITS2_TRAKTOR_MK2 1
+#define VALID_BITS_TRAKTOR_MK2 24
+#define VALID_BITS2_TRAKTOR_MK2 10
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -393,6 +395,7 @@ static void init_channel(struct timecoder *tc, struct timecoder_channel *ch)
 
     if (tc->def->flags & OFFSET_MODULATION) {
         delayline_init(&ch->delayline);
+        delayline_init(&ch->delayline_deriv);
         ch->ref_level = 0;
     }
     ch->upper_avg_slope = INT_MAX/2;
@@ -440,7 +443,14 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->lower_valid_counter = 0;
     tc->mon = NULL;
 
+    tc->upper_corrected_bits = 0;
+    tc->lower_corrected_bits = 0;
     #ifdef MK2_PLOT
+    printf("Writing plotting data to file\n");
+    char *home = getenv("HOME");
+    int len = strlen(home) + strlen("/mk2_samples.out") + 1;
+    snprintf(filepath, len + 1, "%s/mk2_samples.out", home);
+
     fp = fopen(filepath, "w");
     if (!fp) {
             perror("fopen");
@@ -561,10 +571,10 @@ void bits_t_print_binary(bits_t a) {
 }
 
 #define FORWARD_FACTOR 2
-#define REVERSE_FACTOR 1.3
+#define REVERSE_FACTOR 1.35
 #define AVG_FACTOR 1.0
 #define SAFE_FACTOR 3.0
-#define SECOND_FACTOR 1.0
+#define SECOND_FACTOR 1.05
 void detect_bit_flip(bool over_mean, float slope[2], float avg_slope, int reading, int avg_reading, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
 {
     double threshold, threshold2;
@@ -582,11 +592,11 @@ void detect_bit_flip(bool over_mean, float slope[2], float avg_slope, int readin
         }
 
 	/* if (*bit == !one && slope[0] > threshold && slope[1] > threshold * SECOND_FACTOR && slope[0] < SAFE_FACTOR * threshold && reading > avg_reading) { */
-	if (*bit == !one && slope[0] > threshold && slope[1] > threshold2 && reading > avg_reading) {
+	if (*bit == !one && slope[0] > threshold && slope[1] > threshold2) {
 		*bit = one;
 		*bit_flipped = true;
 	/* } else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold * SECOND_FACTOR && slope[0] > -SAFE_FACTOR * threshold && reading < avg_reading) { */
-	} else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold2 && reading < avg_reading) {
+	} else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold2) {
                 /* printf("slope0: %f, slope1: %f\n", slope[0], slope[1]); */
 		*bit = !one;
 		*bit_flipped = true;
@@ -596,10 +606,43 @@ void detect_bit_flip(bool over_mean, float slope[2], float avg_slope, int readin
     }
 }
 
+#define CORRECTION_ATTEMPTS 0
+void correct_bitstream_fwd(bits_t *bitstream, bits_t bit, int *corrected_bits) 
+{
+    /* printf("corrected_bits : %d\n", *corrected_bits); */
+    if (*corrected_bits < CORRECTION_ATTEMPTS) {
+        *bitstream >>= 1; 
+        *bitstream <<= 1; 
+        *bitstream |= bit;
+        (*corrected_bits)++;
+        return;
+    } else {
+        *corrected_bits = 0;
+    }
+}
+
+void correct_bitstream_rev(bits_t *bitstream, bits_t bit, int *corrected_bits) 
+{
+
+    /* printf("corrected_bits : %d\n", *corrected_bits); */
+    if (*corrected_bits < CORRECTION_ATTEMPTS) {
+        bits_t b = bit << 109;
+          
+        *bitstream <<= 1; 
+        *bitstream >>= 1; 
+        *bitstream |= b;
+        return;
+    } else {
+        *corrected_bits = 0;
+    }
+}
+
+
 int error_counter = 0;
 int reading_counter = 0;
 #define UPPER_READING 0
 #define LOWER_READING 1
+#define MEAN_FACTOR 1.1
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     struct timecoder_channel *primary, *secondary;
@@ -663,13 +706,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
             tc->secondary.avg_lower_reading = ema(secondary_reading, &tc->secondary.avg_lower_reading, 0.01);
 
-            int mean = (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
+            int mean = MEAN_FACTOR * (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
             secondary->last_lower_reading[1] = secondary->last_lower_reading[0];
             secondary->last_lower_reading[0] = secondary_reading;
 
             one = 0; // If the signal polarity is flipped
 
-            bool over_mean = reading > - mean;
+            bool over_mean = reading > -mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(over_mean, current_slope, last_slope, reading, 
                             tc->secondary.avg_lower_reading*AVG_FACTOR, &tc->lower_bit,
@@ -696,7 +739,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
             last_slope = (float) secondary->upper_avg_slope / INT_MAX;
             tc->secondary.avg_upper_reading = ema(secondary_reading, &tc->secondary.avg_upper_reading, 0.01);
-            int mean = (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
+            int mean = MEAN_FACTOR * (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
             secondary->last_upper_reading[1] = secondary->last_upper_reading[0];
             secondary->last_upper_reading[0] = secondary_reading;
             one = 1; // If the signal polarity is normal
@@ -716,6 +759,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
             mk2_signal.secondary.upper_reading = secondary_reading;
             mk2_signal.upper_timecode = tc->upper_bit;
             mk2_signal.plot_upper_digit = 1;
+            nwrites++;
 #endif
     }
 
@@ -726,32 +770,42 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 tc->upper_bitstream = (tc->upper_bitstream >> (bits_t)1) + (tc->upper_bit << (tc->def->bits - (bits_t)1));
                 if (tc->upper_timecode == tc->upper_bitstream) {
                         tc->upper_valid_counter++;
-#ifdef MK2_PLOT
-            mk2_signal.secondary.upper_code_correct = true;
-#endif
+                } else {
+                    correct_bitstream_fwd(&tc->upper_bitstream, !tc->upper_bit, &tc->upper_corrected_bits);
+
+                    if (tc->upper_timecode == tc->upper_bitstream) {
+                        tc->upper_valid_counter++;
                     } else {
+
+
 #ifdef MK2_PLOT
-            mk2_signal.secondary.upper_code_correct = false;
+            mk2_signal.secondary.upper_errors = 1;
+            printf("ERROR!\n");
 #endif
                         tc->upper_timecode = tc->upper_bitstream;
                         tc->upper_valid_counter = 0;
                     }
+                }
 
 	} else {
                 tc->lower_timecode = fwd(tc->lower_timecode, tc->def);
                 tc->lower_bitstream = (tc->lower_bitstream >> (bits_t)1) + (tc->lower_bit << (tc->def->bits - (bits_t)1));
                 if (tc->lower_timecode == tc->lower_bitstream) {
-#ifdef MK2_PLOT
-            mk2_signal.secondary.lower_code_correct = true;
-#endif
+                        tc->lower_valid_counter++;
+                } else {
+                    correct_bitstream_fwd(&tc->lower_bitstream, !tc->lower_bit, &tc->lower_corrected_bits);
+                    if (tc->lower_timecode == tc->lower_bitstream) {
                         tc->lower_valid_counter++;
                     } else {
+
 #ifdef MK2_PLOT
-            mk2_signal.secondary.lower_code_correct = false;
+            mk2_signal.secondary.lower_errors = 1;
+            printf("ERROR!\n");
 #endif
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
                     }
+                }
         }
 
         if (tc->upper_valid_counter > VALID_BITS2_TRAKTOR_MK2) {
@@ -772,25 +826,46 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 tc->upper_bitstream = ((tc->upper_bitstream << (bits_t)1) & mask) + tc->upper_bit;
                 if (tc->upper_timecode == tc->upper_bitstream) {
                         tc->upper_valid_counter++;
+                } else {
+                    correct_bitstream_rev(&tc->upper_bitstream, !tc->upper_bit, &tc->upper_corrected_bits);
+                    if (tc->upper_timecode == tc->upper_bitstream) {
+                        tc->upper_valid_counter++;
                     } else {
+
+#ifdef MK2_PLOT
+            mk2_signal.secondary.upper_errors = 1;
+            printf("ERROR!\n");
+#endif
                         tc->upper_timecode = tc->upper_bitstream;
                         tc->upper_valid_counter = 0;
                     }
+                }
         } else {
                 tc->lower_timecode = rev(tc->lower_timecode, tc->def);
                 tc->lower_bitstream = ((tc->lower_bitstream << (bits_t)1) & mask) + tc->lower_bit;
                 if (tc->lower_timecode == tc->lower_bitstream) {
                         tc->lower_valid_counter++;
+                } else {
+                    correct_bitstream_rev(&tc->lower_bitstream, !tc->lower_bit, &tc->lower_corrected_bits);
+                    if (tc->lower_timecode == tc->lower_bitstream) {
+                        tc->lower_valid_counter++;
                     } else {
+
+
+#ifdef MK2_PLOT
+            mk2_signal.secondary.lower_errors = 1;
+            printf("ERROR!\n");
+#endif
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
                         error_counter++;
                     }
+                }
         }
-        if (tc->upper_valid_counter > VALID_BITS2_TRAKTOR_MK2) {
+        if (tc->upper_valid_counter > tc->lower_valid_counter + VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > VALID_BITS2_TRAKTOR_MK2 ) {
+        } else if (tc->lower_valid_counter > tc->upper_valid_counter + VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
@@ -810,18 +885,18 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     tc->timecode_ticker = 0;
 
-    /* Reference level for the monitor. Not used for MK2 timecode */
-
-    signed int m = abs(reading / 2 - tc->primary.zero / 2);
+    signed int m = abs(primary->deriv / 2 - tc->primary.zero / 2);
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
     tc->ref_level += m / REF_PEAKS_AVG;
 
+
     /* Inspect demodulation quality */
-    /* printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d\n", */
+    /* printf("upper_valid_counter: %d, lower_valid_counter %d, upper_valid_counter2: %d, lower_valid_counter2 %d, forwards: %b\n", */
 	   /* tc->upper_valid_counter, */
 	   /* tc->lower_valid_counter, */
 	   /* tc->upper_valid_counter2, */
-	   /* tc->lower_valid_counter2); */
+	   /* tc->lower_valid_counter2, */
+           /* tc->forwards); */
 
     if(reading_counter == tc->def->resolution * 10) {
         printf("errors: %d\n", error_counter);
@@ -901,14 +976,16 @@ static void process_sample(struct timecoder *tc,
 
 
     if (tc->def->flags & OFFSET_MODULATION) {
-        /* primary = ema(primary, &p_old, 0.99); */
-        /* secondary = ema(secondary, &s_old, 0.99); */
+        /* primary = ema(primary, &p_old, 0.95); */
+        /* secondary = ema(secondary, &s_old, 0.95); */
         tc->primary.ema = ema(primary, &tc->primary.ema_old, alpha);
         tc->secondary.ema = ema(secondary, &tc->secondary.ema_old, alpha);
         tc->primary.ema2 = ema(primary, &tc->primary.ema_old, alpha2);
         tc->secondary.ema2 = ema(secondary, &tc->secondary.ema_old, alpha2);
         tc->primary.deriv = discrete_derivative(tc->primary.ema, &tc->primary.deriv_old);
         tc->secondary.deriv = discrete_derivative(tc->secondary.ema, &tc->secondary.deriv_old);
+        delayline_push(&tc->primary.delayline_deriv, tc->primary.deriv);
+        delayline_push(&tc->secondary.delayline_deriv, tc->secondary.deriv);
         detect_zero_crossing(&tc->primary, tc->primary.deriv, tc->zero_alpha, tc->threshold);
         detect_zero_crossing(&tc->secondary, tc->secondary.deriv, tc->zero_alpha, tc->threshold);
     } else {
@@ -962,6 +1039,8 @@ static void process_sample(struct timecoder *tc,
         mk2_signal.primary.lower_reading = 0;
         mk2_signal.primary.avg_upper_reading = tc->primary.avg_upper_reading;
         mk2_signal.primary.avg_lower_reading = tc->primary.avg_lower_reading;
+        mk2_signal.primary.upper_errors = 0;
+        mk2_signal.primary.lower_errors = 0;
 
         mk2_signal.secondary.value = *delayline_at_index(&tc->secondary.delayline, FILTER_DELAY);
         mk2_signal.secondary.deriv = tc->secondary.deriv;
@@ -969,6 +1048,8 @@ static void process_sample(struct timecoder *tc,
         mk2_signal.secondary.lower_reading = 0;
         mk2_signal.secondary.avg_upper_reading = tc->secondary.avg_upper_reading;
         mk2_signal.secondary.avg_lower_reading = tc->secondary.avg_lower_reading;
+        mk2_signal.secondary.upper_errors = 0;
+        mk2_signal.secondary.lower_errors = 0;
 
         mk2_signal.forwards = tc->forwards;
         mk2_signal.plot_upper_digit = 0;
@@ -995,6 +1076,11 @@ static void process_sample(struct timecoder *tc,
 	}
 #ifdef MK2_PLOT
         fwrite(&mk2_signal, sizeof(struct mk2_signal), 1, fp);
+        if (nwrites > (tc->def->resolution) * T) {
+            fclose(fp);
+            printf("%d second(s) of timecode data have been written to %s\n", T, filepath);
+            exit(0);
+        }
 #endif
 	tc->timecode_ticker++;
 }
@@ -1061,7 +1147,7 @@ void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
         process_sample(tc, primary, secondary);
 
         if (tc->def->flags & OFFSET_MODULATION) {
-            update_monitor(tc, tc->primary.deriv * 1.5, tc->secondary.deriv * 1.5);
+            update_monitor(tc, tc->primary.deriv, tc->secondary.deriv);
 	} else {
             update_monitor(tc, left, right);
         }

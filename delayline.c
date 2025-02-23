@@ -1,4 +1,6 @@
+#include <limits.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -70,6 +72,26 @@ unsigned int delayline_avg(struct delayline *delayline)
 
 	return (unsigned int) (sum / delayline->size);
 }
+
+unsigned int delayline_rms(struct delayline *delayline)
+{
+	if (!delayline) {
+		printf("%s: Null pointer exception\n", __func__);
+		return -EINVAL;
+	}
+
+	double sum = 0;
+        int buffer[DELAYLINE_SIZE];
+
+	for (int i = 0; i < delayline->size; i++) 
+		buffer[i] = sqrt((double) delayline->array[i] / INT_MAX);
+
+	for (int i = 0; i < delayline->size; i++) 
+		sum += buffer[i];
+
+	return (unsigned int) ((sum / delayline->size) * sum / INT_MAX) ;
+}
+
 
 /* Prints the circular buffer starting at the current read pointer  */
 void delayline_print(struct delayline *delayline)
