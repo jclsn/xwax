@@ -54,7 +54,7 @@ struct timecoder_channel {
     /* For MK2 demodulation */
     struct delayline delayline;
 
-    int last_upper_reading, last_lower_reading;
+    int last_upper_reading[2], last_lower_reading[2];
     int jump_upper, jump_lower;
     int lower_reading, upper_reading;
     int avg_upper_reading, avg_lower_reading;

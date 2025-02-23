@@ -95,6 +95,7 @@ struct mk2_signal mk2_signal = {};
 
 #define VALID_BITS 24
 #define VALID_BITS_TRAKTOR_MK2 1
+#define VALID_BITS2_TRAKTOR_MK2 1
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -565,25 +566,33 @@ void bits_t_print_binary(bits_t a) {
 }
 
 #define FORWARD_FACTOR 2
-#define REVERSE_FACTOR 1.5
+#define REVERSE_FACTOR 1.3
 #define AVG_FACTOR 1.0
-void detect_bit_flip(bool over_mean, float slope, float last_slope, int reading, int avg_reading, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
+#define SAFE_FACTOR 3.0
+#define SECOND_FACTOR 1.0
+void detect_bit_flip(bool over_mean, float slope[2], float avg_slope, int reading, int avg_reading, bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
 {
-    float threshold;
+    double threshold, threshold2;
+    
 
     if (*bit_flipped == false) {
 
         if (forwards) {
-                threshold = FORWARD_FACTOR * last_slope;
+                threshold = FORWARD_FACTOR * avg_slope;
+                threshold2 = (FORWARD_FACTOR * avg_slope) * SECOND_FACTOR;
         } else {
-                threshold = REVERSE_FACTOR * last_slope;
+                threshold = REVERSE_FACTOR * avg_slope;
+                threshold2 = (REVERSE_FACTOR * avg_slope) * SECOND_FACTOR;
                 one = !one;
         }
 
-	if (*bit == !one && slope > threshold && reading > avg_reading) {
+	/* if (*bit == !one && slope[0] > threshold && slope[1] > threshold * SECOND_FACTOR && slope[0] < SAFE_FACTOR * threshold && reading > avg_reading) { */
+	if (*bit == !one && slope[0] > threshold && slope[1] > threshold2 && reading > avg_reading) {
 		*bit = one;
 		*bit_flipped = true;
-	} else if (*bit == one && slope < -threshold && reading < avg_reading) {
+	/* } else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold * SECOND_FACTOR && slope[0] > -SAFE_FACTOR * threshold && reading < avg_reading) { */
+	} else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold2 && reading < avg_reading) {
+                /* printf("slope0: %f, slope1: %f\n", slope[0], slope[1]); */
 		*bit = !one;
 		*bit_flipped = true;
 	}
@@ -592,13 +601,15 @@ void detect_bit_flip(bool over_mean, float slope, float last_slope, int reading,
     }
 }
 
+int error_counter = 0;
+int reading_counter = 0;
 #define UPPER_READING 0
 #define LOWER_READING 1
 static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     struct timecoder_channel *primary, *secondary;
     int primary_reading, secondary_reading;
-    float current_slope, last_slope;
+    float current_slope[2], last_slope;
     bits_t one;
 
         primary = &tc->primary;
@@ -618,42 +629,49 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
      */
     if (primary->swapped && primary->positive)  {
             /* Calculate absolute of lower average slope */
-	    tc->primary.lower_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading),
+	    tc->primary.lower_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading[0]),
 					  &tc->primary.upper_avg_slope,
 					  0.01);
 
-	    primary->last_lower_reading = primary_reading;
+	    primary->last_lower_reading[1] = primary->last_lower_reading[0];
+	    primary->last_lower_reading[0] = primary_reading;
 
             /* TODO: Also process primary bitstream */
 
 	    return; 
     } else if (primary->swapped && !primary->positive)  {
             /* Calculate absolute of upper average slope */
-	    tc->primary.upper_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading),
+	    tc->primary.upper_avg_slope = ema(abs(primary_reading - tc->primary.last_upper_reading[0]),
 					  &tc->primary.upper_avg_slope,
 					  0.01);
 
 
-	    primary->last_upper_reading = primary_reading;
+            primary->last_upper_reading[1] = primary->last_upper_reading[0];
+	    primary->last_upper_reading[0] = primary_reading;
+
+
             /* TODO: Also process primary bitstream */
 
 	    return; 
     } else if (secondary->swapped && secondary->positive)  {
             /* Calculate absolute of lower average slope */
 	    tc->secondary.lower_avg_slope =
-		    ema(abs(secondary_reading - tc->secondary.last_lower_reading),
+		    ema(abs(secondary_reading - tc->secondary.last_lower_reading[0]),
 			&tc->secondary.lower_avg_slope,
 			0.01);
 
 
             /* Calculate current and last slope */
-	    current_slope = (float) (secondary_reading - tc->secondary.last_lower_reading) / INT_MAX;
+	    current_slope[0] = (float) (secondary_reading - tc->secondary.last_lower_reading[0]) / INT_MAX;
+	    current_slope[1] = (float) (secondary_reading - tc->secondary.last_lower_reading[1]) / INT_MAX;
             last_slope = (float) secondary->lower_avg_slope / INT_MAX;
 
             tc->secondary.avg_lower_reading = ema(secondary_reading, &tc->secondary.avg_lower_reading, 0.01);
 
-            int mean = (tc->secondary.last_upper_reading + abs(tc->secondary.last_lower_reading)) / 2;
-            secondary->last_lower_reading = secondary_reading; // Update last lower reading
+            int mean = (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
+            secondary->last_lower_reading[1] = secondary->last_lower_reading[0];
+            secondary->last_lower_reading[0] = secondary_reading;
+
             one = 0; // If the signal polarity is flipped
 
             bool over_mean = reading > - mean;
@@ -673,23 +691,25 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
     } else if (secondary->swapped && !secondary->positive)  {
             /* Calculate absolute of upper average slope */
 	    tc->secondary.upper_avg_slope =
-		    ema(abs(secondary_reading - tc->secondary.last_upper_reading),
+		    ema(abs(secondary_reading - tc->secondary.last_upper_reading[0]),
 			&tc->secondary.upper_avg_slope,
 			0.01);
 
             /* Calculate current and last slope */
-	    current_slope = (float) (secondary_reading - tc->secondary.last_upper_reading) / INT_MAX;
+	    current_slope[0] = (float) (secondary_reading - tc->secondary.last_upper_reading[0]) / INT_MAX;
+	    current_slope[1] = (float) (secondary_reading - tc->secondary.last_upper_reading[1]) / INT_MAX;
 
             last_slope = (float) secondary->upper_avg_slope / INT_MAX;
             tc->secondary.avg_upper_reading = ema(secondary_reading, &tc->secondary.avg_upper_reading, 0.01);
-            int mean = (tc->secondary.last_upper_reading + abs(tc->secondary.last_lower_reading)) / 2;
-            secondary->last_upper_reading = secondary_reading; // Update last upper reading
+            int mean = (tc->secondary.last_upper_reading[0] + abs(tc->secondary.last_lower_reading[0])) / 2;
+            secondary->last_upper_reading[1] = secondary->last_upper_reading[0];
+            secondary->last_upper_reading[0] = secondary_reading;
             one = 1; // If the signal polarity is normal
 
             bool over_mean = reading > mean;
 	    /* The bits only change when an offset jump occurs. Else the previous bit is taken  */
             detect_bit_flip(over_mean, current_slope, last_slope, reading, 
-                            tc->secondary.avg_upper_reading*AVG_FACTOR, &tc->upper_bit,
+                            (int) tc->secondary.avg_upper_reading*AVG_FACTOR, &tc->upper_bit,
                             &tc->upper_bit_flipped, tc->forwards, one);
 
             tc->reading_type = UPPER_READING;
@@ -727,10 +747,10 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     }
         }
 
-        if (tc->upper_valid_counter > 1) {
+        if (tc->upper_valid_counter > VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > 1 ) {
+        } else if (tc->lower_valid_counter > VALID_BITS2_TRAKTOR_MK2 ) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
@@ -757,12 +777,13 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     } else {
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
+                        error_counter++;
                     }
         }
-        if (tc->upper_valid_counter > 1) {
+        if (tc->upper_valid_counter > VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > 1 ) {
+        } else if (tc->lower_valid_counter > VALID_BITS2_TRAKTOR_MK2 ) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
@@ -771,6 +792,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
     }
 
+    reading_counter++;
     if (tc->timecode == tc->bitstream) {
         tc->valid_counter++;
     } else {
@@ -793,6 +815,12 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 	   /* tc->lower_valid_counter, */
 	   /* tc->upper_valid_counter2, */
 	   /* tc->lower_valid_counter2); */
+
+    if(reading_counter == tc->def->resolution * 10) {
+        printf("errors: %d\n", error_counter);
+        /* exit(0); */
+    }
+
 }
 
 
@@ -855,13 +883,19 @@ static void process_bitstream(struct timecoder *tc, signed int m)
  * of a signed int; ie. 32-bit signed.
  */
 
+int p_old, s_old;
+double pitch_old = 0;
 static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
     double alpha = 0.3;
     double alpha2 = 0.01;
 
+
+
     if (tc->def->flags & OFFSET_MODULATION) {
+        /* primary = ema(primary, &p_old, 0.99); */
+        /* secondary = ema(secondary, &s_old, 0.99); */
         tc->primary.ema = ema(primary, &tc->primary.ema_old, alpha);
         tc->secondary.ema = ema(secondary, &tc->secondary.ema_old, alpha);
         tc->primary.ema2 = ema(primary, &tc->primary.ema_old, alpha2);
@@ -904,6 +938,7 @@ static void process_sample(struct timecoder *tc,
     else {
 	double dx;
 
+	/* dx = emaf(1.0 / tc->def->resolution / 4, &pitch_old, 0.99); */
 	dx = 1.0 / tc->def->resolution / 4;
 	if (!tc->forwards)
 	    dx = -dx;
