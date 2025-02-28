@@ -98,8 +98,8 @@ int T = 1;
  * around (often to blank areas of track) during scratching */
 
 #define VALID_BITS 24
-#define VALID_BITS_TRAKTOR_MK2 24
-#define VALID_BITS2_TRAKTOR_MK2 10
+#define VALID_BITS_TRAKTOR_MK2 114
+#define VALID_BITS2_TRAKTOR_MK2 1
 
 #define MONITOR_DECAY_EVERY 512 /* in samples */
 
@@ -808,10 +808,10 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                 }
         }
 
-        if (tc->upper_valid_counter > VALID_BITS2_TRAKTOR_MK2) {
+        if (tc->upper_valid_counter > tc->lower_valid_counter + VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
-        } else if (tc->lower_valid_counter > VALID_BITS2_TRAKTOR_MK2 ) {
+        } else if (tc->lower_valid_counter > tc->upper_valid_counter + VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->lower_bitstream;
             tc->timecode = tc->lower_timecode;
         }
@@ -862,6 +862,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
                     }
                 }
         }
+
         if (tc->upper_valid_counter > tc->lower_valid_counter + VALID_BITS2_TRAKTOR_MK2) {
             tc->bitstream = tc->upper_bitstream;
             tc->timecode = tc->upper_timecode;
