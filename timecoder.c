@@ -780,7 +780,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 #ifdef MK2_PLOT
             mk2_signal.secondary.upper_errors = 1;
-            printf("ERROR!\n");
+            /* printf("ERROR!\n"); */
 #endif
                         tc->upper_timecode = tc->upper_bitstream;
                         tc->upper_valid_counter = 0;
@@ -800,7 +800,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 #ifdef MK2_PLOT
             mk2_signal.secondary.lower_errors = 1;
-            printf("ERROR!\n");
+            /* printf("ERROR!\n"); */
 #endif
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
@@ -834,7 +834,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 #ifdef MK2_PLOT
             mk2_signal.secondary.upper_errors = 1;
-            printf("ERROR!\n");
+            /* printf("ERROR!\n"); */
 #endif
                         tc->upper_timecode = tc->upper_bitstream;
                         tc->upper_valid_counter = 0;
@@ -854,7 +854,7 @@ static void process_mk2_bitstream(struct timecoder *tc, signed int reading) {
 
 #ifdef MK2_PLOT
             mk2_signal.secondary.lower_errors = 1;
-            printf("ERROR!\n");
+            /* printf("ERROR!\n"); */
 #endif
                         tc->lower_timecode = tc->lower_bitstream;
                         tc->lower_valid_counter = 0;
