@@ -34,7 +34,7 @@ struct timecode_def {
     int bits, /* number of bits in string */
         resolution, /* wave cycles per second */
         flags;
-    bits_t seed, /* LFSR value at timecode zero */
+    bits_t seed, seed2, /* LFSR value at timecode zero */
         taps; /* central LFSR taps, excluding end taps */
     unsigned int length, /* in cycles */
         safe; /* last 'safe' timecode number (for auto disconnect) */
