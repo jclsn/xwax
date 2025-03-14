@@ -24,6 +24,7 @@
 
 #include "lut.h"
 #include "pitch.h"
+#include "delayline.h"
 
 #define TIMECODER_CHANNELS 2
 
@@ -48,6 +49,8 @@ struct timecoder_channel {
 	swapped; /* wave recently swapped polarity */
     signed int zero;
     unsigned int crossing_ticker; /* samples since we last crossed zero */
+
+    struct delayline delayline; /* needed for the Traktor MK2 demodulation */
 };
 
 struct timecoder {

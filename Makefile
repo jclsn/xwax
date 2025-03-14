@@ -51,6 +51,7 @@ OBJS = controller.o \
 	cues.o \
 	deck.o \
 	device.o \
+	delayline.o \
 	dummy.o \
 	excrate.o \
 	external.o \
@@ -178,7 +179,7 @@ tests/observer:	tests/observer.o
 
 tests/status:	tests/status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o types.o filters.o
+tests/timecoder:	tests/timecoder.o lut.o timecoder.o types.o filters.o delayline.o
 tests/timecoder:	LDFLAGS += -lm
 tests/timecoder:	LDLIBS += -lm
 
