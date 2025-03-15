@@ -38,6 +38,7 @@
 #include <unistd.h>
 
 #include "debug.h"
+#include "filters.h"
 #include "timecoder.h"
 
 #define ZERO_THRESHOLD (128 << 16)
@@ -422,6 +423,8 @@ static void init_channel(struct timecoder_channel *ch)
     ch->positive = false;
     ch->zero = 0;
 
+    ch->rms = INT_MAX/2;
+    ch->rms_old = INT_MAX/2;
     delayline_init(&ch->delayline);
 }
 
@@ -444,6 +447,7 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->speed = speed;
 
     tc->dt = 1.0 / sample_rate;
+    tc->sample_rate = sample_rate;
     tc->zero_alpha = tc->dt / (ZERO_RC + tc->dt);
     tc->threshold = ZERO_THRESHOLD;
     if (phono)
@@ -631,8 +635,14 @@ static void process_sample(struct timecoder *tc,
 {
 
     if (tc->def->flags & TRAKTOR_MK2) {
-        delayline_push(&tc->primary.delayline, primary);
-        delayline_push(&tc->secondary.delayline, secondary);
+        /* Push the samples into the ringbuffer */
+        delayline_push(&tc->primary.mk2.delayline, primary);
+        delayline_push(&tc->secondary.mk2.delayline, secondary);
+
+        /* Compute the smoothed RMS value */
+        tc->primary.mk2.rms = rms(&tc->primary.mk2.rms_filter, primary);
+        tc->secondary.mk2.rms = rms(&tc->secondary.mk2.rms_filter, secondary);
+
     } else {
         detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
         detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
@@ -672,6 +682,7 @@ static void process_sample(struct timecoder *tc,
 	    dx = -dx;
 	pitch_dt_observation(&tc->pitch, dx);
     }
+
 
     /* If we have crossed the primary channel in the right polarity,
      * it's time to read off a timecode 0 or 1 value */
