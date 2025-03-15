@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 
+#include "filters.h"
 #include "lut.h"
 #include "pitch.h"
 #include "delayline.h"
@@ -43,13 +44,20 @@ struct timecode_def {
     struct lut lut;
 };
 
+struct timecoder_channel_mk2 {
+    int rms; /* RMS values for the signal and its derivative */
+
+    struct delayline delayline; /* needed for the Traktor MK2 demodulation */
+    struct root_mean_square rms_filter;
+};
+
 struct timecoder_channel {
     bool positive, /* wave is in positive part of cycle */
 	swapped; /* wave recently swapped polarity */
     signed int zero;
     unsigned int crossing_ticker; /* samples since we last crossed zero */
 
-    struct delayline delayline; /* needed for the Traktor MK2 demodulation */
+    struct timecoder_channel_mk2 mk2;
 };
 
 struct timecoder {
@@ -59,6 +67,7 @@ struct timecoder {
     /* Precomputed values */
 
     double dt, zero_alpha;
+    int sample_rate;
     signed int threshold;
 
     /* Pitch information */
