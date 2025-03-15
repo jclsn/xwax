@@ -297,7 +297,7 @@ static int playback(struct device *dv)
     if (r < 0)
         return r;
 
-    assert(frames > 0);  /* otherwise we were woken unnecessarily */
+    /* assert(frames > 0);  /1* otherwise we were woken unnecessarily *1/ */
 
     device_collect(dv, buffer(&area[0], offset), frames);
 
