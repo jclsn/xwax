@@ -782,11 +782,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
-        /* Push the samples into the ringbuffer */
     if (tc->def->flags & TRAKTOR_MK2) {
-        delayline_push(&tc->primary.mk2.delayline, primary);
-        delayline_push(&tc->secondary.mk2.delayline, secondary);
-
         /* Compute the discrete derivative */
         tc->primary.mk2.deriv = derivative(&tc->primary.mk2.differentiator,
                                            ema(&tc->primary.mk2.ema_filter, primary));
