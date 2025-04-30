@@ -41,7 +41,7 @@ struct timecode_def {
     unsigned int length, /* in cycles */
         safe; /* last 'safe' timecode number (for auto disconnect) */
     bool lookup; /* true if lut has been generated */
-    struct lut lut;
+    struct lut lut, lut2;
 };
 
 struct timecoder_channel_mk2 {

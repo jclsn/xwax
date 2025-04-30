@@ -297,8 +297,9 @@ static int build_lookup(struct timecode_def *def)
 
 static int build_lookup_mk2(struct timecode_def *def)
 {
-    unsigned int n;
+    unsigned int n, length;
     bits_t current, next;
+    bits_t current2, next2;
 
     if (def->lookup)
         return 0;
@@ -306,22 +307,34 @@ static int build_lookup_mk2(struct timecode_def *def)
     fprintf(stderr, "Building LUT for %d bit %dHz timecode (%s)\n",
             def->bits, def->resolution, def->desc);
 
-    if (lut_init(&def->lut, def->length) == -1)
+    length = def->length / 5;
+    if (lut_init(&def->lut, length) == -1)
         return -1;
 
-    current = def->seed;
+    if (lut_init(&def->lut2, length + 1) == -1)
+        return -1;
 
-    for (n = 0; n < def->length; n++) {
+    def->lut2.avail++;
+
+    current = def->seed;
+    current2 = def->seed2;
+
+    for (n = 0; n < length; n++) {
 
         /* timecode must not wrap */
         assert(lut_lookup(&def->lut, current) == (unsigned)-1);
         lut_push(&def->lut, current);
+        assert(lut_lookup(&def->lut2, current2) == (unsigned)-1);
+        lut_push(&def->lut2, current2);
 
         /* check symmetry of the lfsr functions */
         next = fwd(current, def);
+        next2 = fwd(current2, def);
         assert(rev(next, def) == current);
+        assert(rev(next2, def) == current2);
 
         current = next;
+        current2 = next2;
     }
 
     def->lookup = true;
@@ -369,13 +382,8 @@ void timecoder_free_lookup(void) {
     for (n = 0; n < ARRAY_SIZE(timecodes); n++) {
         struct timecode_def *def = &timecodes[n];
 
-        if (def->flags & TRAKTOR_MK2) {
-            if (def->lookup)
-                lut_clear_mk2(&def->lut_mk2);
-        } else {
-            if (def->lookup)
-                lut_clear(&def->lut);
-        }
+        if (def->lookup)
+            lut_clear(&def->lut);
     }
 }
 

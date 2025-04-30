@@ -88,6 +88,7 @@ void lut_push(struct lut *lut, unsigned int timecode)
     hash = HASH(timecode);
     slot->next = lut->table[hash];
     lut->table[hash] = slot_no;
+    
 }
 
 
