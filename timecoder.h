@@ -31,6 +31,16 @@
 
 typedef unsigned int bits_t;
 
+struct timecode_mk2 {
+    slot_no_t lfsr1_slot;
+    slot_no_t lfsr2_slot;
+
+    unsigned int lfsr1_repetition;
+    unsigned int lfsr2_repetition;
+
+    bool is_lfsr1;
+};
+
 struct timecode_def {
     const char *name, *desc;
     int bits, /* number of bits in string */
@@ -94,6 +104,9 @@ struct timecoder {
     int mon_size, mon_counter;
 
     double gain_compensation; /* Scaling factor for the derivative */
+
+    /* MK2 quirks */
+    struct timecode_mk2 mk2;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
@@ -157,6 +170,23 @@ static inline double timecoder_get_resolution(struct timecoder *tc)
 static inline double timecoder_revs_per_sec(struct timecoder *tc)
 {
     return (33.0 + 1.0 / 3) * tc->speed / 60;
+}
+
+
+/*
+ * Computes the actual timecode slot from LFSR1 or LFSR2 of the Traktor MK2 timecode
+ */
+
+static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
+{
+    static const slot_no_t lfsr1_multiplier = 5;
+    static const slot_no_t lfsr2_offset = 3;
+
+    if (tc->mk2.is_lfsr1)
+        return (tc->mk2.lfsr1_slot * lfsr1_multiplier) + tc->mk2.lfsr1_repetition;
+    else
+        return ((tc->mk2.lfsr2_slot - 1) * lfsr1_multiplier) + lfsr2_offset +
+               tc->mk2.lfsr2_repetition;
 }
 
 #endif
