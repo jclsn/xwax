@@ -26,6 +26,7 @@
 #include "lut.h"
 #include "pitch.h"
 #include "delayline.h"
+#include "types.h"
 
 #define TIMECODER_CHANNELS 2
 
@@ -203,6 +204,27 @@ static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
     else
         return ((tc->mk2.lfsr2_slot - 1) * lfsr1_multiplier) + lfsr2_offset +
                tc->mk2.lfsr2_repetition;
+}
+
+/* 
+ * Decimates the 110-bit LFSR to a 22-bit LFSR by taking only every fifth value into account
+ */
+
+static inline bits_t mk2_decimate(u128 window)
+{
+    static const size_t decimation_factor = 5;
+    static const size_t resulting_bits = 22;
+
+    bits_t decimated = 0;
+    bits_t shifted = 0;
+
+    for (size_t i = 0; i < resulting_bits; i++) {
+        shifted = u128_and(window, U128_ONE).low << i;
+        decimated |= shifted;
+        u128_rshift(window, decimation_factor);
+    }
+    
+    return decimated;
 }
 
 #endif
