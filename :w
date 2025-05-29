@@ -73,21 +73,6 @@ struct timecoder_channel {
     struct timecoder_channel_mk2 mk2;
 };
 
-struct mk2_subcode {
-    bits_t bitstream;
-    bits_t timecode;
-    bits_t bit;
-
-    unsigned int valid_counter;
-    signed int avg_reading;
-    signed int avg_slope;
-    bool recent_bit_flip;
-
-    struct delayline readings;
-    struct ema_filter ema_reading;
-    struct ema_filter ema_slope;
-};
-
 struct timecoder {
     struct timecode_def *def;
     double speed;
@@ -118,10 +103,9 @@ struct timecoder {
     unsigned char *mon; /* x-y array */
     int mon_size, mon_counter;
 
-    struct mk2_subcode upper_subcode, lower_subcode;
     double gain_compensation; /* Scaling factor for the derivative */
 
-    /* MK2 quirks */
+    /* MK2 quirk */
     struct timecode_mk2 mk2;
 };
 
@@ -189,20 +173,54 @@ static inline double timecoder_revs_per_sec(struct timecoder *tc)
 }
 
 
-/*
- * Computes the actual timecode slot from LFSR1 or LFSR2 of the Traktor MK2 timecode
- */
-
-static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
+#define MK2_MULTIPLIER 5
+#define LFSR2_OFFSET 3 // LFSR2 advances every (5 + 3)rd reading 
+static inline int mk2_compute_actual_slot(struct timecoder *tc)
 {
-    static const slot_no_t lfsr1_multiplier = 5;
-    static const slot_no_t lfsr2_offset = 3;
+
+    /* 
+     * At face value the Traktor MK2 LFSR seems to be of 110th order, i.e. it has a length of 110
+     * bits. This results in a huge lookup table and requires an integer type that holds 110 bits
+     * which has some computational and huge memory drawbacks. However, if we decimate the
+     * sequence by a factor of five, meaning we only take every fifth bit into account, we can
+     * observe that there are actually two 22-bit LFSRs hidden in this code, that repeat in the
+     * following fashion
+     *
+     *              a/b slot | function | = actual slot
+     *              --------------|-------------------------
+     *                a = 0  | * 5 + 1  | = 1
+     *                a = 0  | * 5 + 0  | = 0
+     *                a = 0  | * 5 + 2  | = 2
+     *                b = 1  | * 5 + 2  | = 2
+     *                b = 1  | * 5 + 2  | = 2
+     *                a = 1  | * 5 + 0  | = 5
+     *                a = 1  | * 5 + 1  | = 6
+     *                a = 1  | * 5 + 2  | = 7
+     *                b = 2  | * 5 + 2  | = 2
+     *                b = 2  | * 5 + 2  | = 2
+     */
 
     if (tc->mk2.is_lfsr1)
-        return (tc->mk2.lfsr1_slot * lfsr1_multiplier) + tc->mk2.lfsr1_repetition;
+        /* 
+         * LFSR1 advances every 5th reading and repeats three times. 
+         * To obtain the actual timecode slot, you need to * multiply 
+         * lfsr1_slot by five and add the repetition number.
+         *
+         * Example: 
+         *              0 * 5 + 0 = 0
+         *              0 * 5 + 1 = 1
+         *              0 * 5 + 2 = 2
+         *              1 * 5 + 0 = 5
+         *
+         */
+        return (tc->mk2.lfsr1_slot * MK2_MULTIPLIER) + tc->mk2.lfsr1_repetition;
     else
-        return ((tc->mk2.lfsr2_slot - 1) * lfsr1_multiplier) + lfsr2_offset +
-               tc->mk2.lfsr2_repetition;
+        /* 
+         * LFSR2 advances every (5+3)rd reading and repeats three two times. 
+         * To obtain the actual timecode slot, you need to * multiply 
+         * lfsr1_slot by five, add three and add the repetition number.
+         */
+        return ((tc->mk2.lfsr2_slot - 1) * MK2_MULTIPLIER) + LFSR2_OFFSET + tc->mk2.lfsr2_repetition;
 }
 
 #endif

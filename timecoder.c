@@ -561,6 +561,124 @@ static void update_monitor(struct timecoder *tc, signed int x, signed int y)
     tc->mon[py * size + px] = 0xff; /* white */
 }
 
+static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_reading,
+				   bits_t *bit, bool *bit_flipped, bool forwards, bits_t one)
+{
+    static const double forward_factor = 1.5;
+    static const double reverse_factor = 1.75;
+
+    double threshold;
+
+    if (*bit_flipped == false) {
+        if (forwards) {
+            threshold = rms / forward_factor;
+        } else {
+            threshold = rms / reverse_factor;
+            one = !one;
+        }
+
+        if (*bit == !one && slope[0] > threshold && slope[1] > threshold) {
+            *bit = one;
+            *bit_flipped = true;
+        } else if (*bit == one && slope[0] < -threshold && slope[1] < -threshold) {
+            *bit = !one;
+            *bit_flipped = true;
+        }
+    } else {
+        *bit_flipped = false;
+    }
+}
+
+/* 
+ * Append the demodulated bit to the bitstream
+ */
+
+static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_t *bitstream,
+        bits_t bit, const bool forwards)
+{
+    if (forwards) {
+        *timecode = fwd(*timecode, def);
+        *bitstream = (*bitstream >> 1) + (bit << (def->bits - 1));
+    } else {
+        bits_t mask = (1 << def->bits) - 1;
+        *timecode = rev(*timecode, def);
+        *bitstream = ((*bitstream << 1) & mask) + bit;
+    }
+    if (*timecode == *bitstream)
+        return true;
+    else
+        return false;
+}
+
+/* 
+ * Process the upper or lower subcode
+ */
+
+static inline void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+{
+    int current_slope[2];
+
+    delayline_push(&sc->readings, reading);
+    sc->avg_reading = ema(&sc->ema_reading, reading);
+
+    /* Calculate absolute of average slope */
+    sc->avg_slope = ema(&sc->ema_slope, abs(reading - *delayline_at(&sc->readings, 1)));
+
+    /* Calculate current and last slope */
+    current_slope[0] =  (reading - *delayline_at(&sc->readings, 1));
+    current_slope[1] =  (reading - *delayline_at(&sc->readings, 2));
+
+    /* The bits only change when an offset jump occurs. Else the previous bit is taken */
+    detect_bit_flip(current_slope, tc->secondary.mk2.rms, reading, sc->avg_reading, &sc->bit,
+                    &sc->recent_bit_flip, tc->forwards, !tc->secondary.positive);
+
+    if (lfsr_verify(tc->def, &sc->timecode, &sc->bitstream, sc->bit, tc->forwards)) {
+        (sc->valid_counter)++;
+    } else {
+        sc->timecode = sc->bitstream;
+        sc->valid_counter = 0;
+    }
+}
+
+static void mk2_process_bitstream(struct timecoder *tc, signed int reading) {
+
+    /*
+     * Detect if the offset jumps on upper and lower bitstream
+     */
+
+    if (tc->secondary.positive)
+        mk2_process_subcode(tc, &tc->upper_subcode, reading);
+    else if (!tc->secondary.positive)
+        mk2_process_subcode(tc, &tc->lower_subcode, reading);
+
+    if (tc->lower_subcode.valid_counter > tc->upper_subcode.valid_counter) {
+        tc->mk2_bitstream = tc->lower_subcode.bitstream;
+        tc->mk2_timecode = tc->lower_subcode.timecode;
+    } else {
+        tc->mk2_bitstream = tc->upper_subcode.bitstream;
+        tc->mk2_timecode = tc->upper_subcode.timecode;
+    }
+
+    if (tc->mk2_timecode == tc->mk2_bitstream) {
+        tc->valid_counter++;
+    } else {
+        tc->timecode = tc->bitstream;
+        tc->valid_counter = 0;
+    }
+
+    /* Take note of the last time we read a valid timecode */
+
+    tc->timecode_ticker = 0;
+
+    tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
+    tc->ref_level += abs((int) (tc->secondary.mk2.rms_deriv * tc->gain_compensation)) / REF_PEAKS_AVG;
+
+    debug("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", */
+           tc->upper.valid_counter,
+           tc->lower.valid_counter,
+           tc->forwards);
+}
+
 /*
  * Extract the bitstream from the sample value
  */
