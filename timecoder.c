@@ -589,12 +589,8 @@ static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_r
     }
 }
 
-/* 
- * Append the demodulated bit to the bitstream
- */
-
 static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_t *bitstream,
-        bits_t bit, const bool forwards)
+        bits_t bit, bool forwards)
 {
     if (forwards) {
         *timecode = fwd(*timecode, def);
@@ -614,7 +610,7 @@ static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_
  * Process the upper or lower subcode
  */
 
-static inline void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+inline static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
 {
     int current_slope[2];
 
