@@ -32,16 +32,6 @@
 
 typedef unsigned int bits_t;
 
-struct timecode_mk2 {
-    slot_no_t lfsr1_slot;
-    slot_no_t lfsr2_slot;
-
-    unsigned int lfsr1_repetition;
-    unsigned int lfsr2_repetition;
-
-    bool is_lfsr1;
-};
-
 struct timecode_def {
     const char *name, *desc;
     int bits, /* number of bits in string */
@@ -89,6 +79,18 @@ struct mk2_subcode {
     struct ema_filter ema_slope;
 };
 
+struct timecode_mk2 {
+    struct mk2_subcode upper_subcode, lower_subcode;
+
+    slot_no_t lfsr1_slot;
+    slot_no_t lfsr2_slot;
+
+    unsigned int lfsr1_idx;
+    unsigned int lfsr2_idx;
+
+    bool is_lfsr1;
+};
+
 struct timecoder {
     struct timecode_def *def;
     double speed;
@@ -119,7 +121,6 @@ struct timecoder {
     unsigned char *mon; /* x-y array */
     int mon_size, mon_counter;
 
-    struct mk2_subcode upper_subcode, lower_subcode;
     double gain_compensation; /* Scaling factor for the derivative */
 
     /* MK2 quirks */
@@ -200,10 +201,10 @@ static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
     static const slot_no_t lfsr2_offset = 3;
 
     if (tc->mk2.is_lfsr1)
-        return (tc->mk2.lfsr1_slot * lfsr1_multiplier) + tc->mk2.lfsr1_repetition;
+        return (tc->mk2.lfsr1_slot * lfsr1_multiplier) + tc->mk2.lfsr1_idx;
     else
         return ((tc->mk2.lfsr2_slot - 1) * lfsr1_multiplier) + lfsr2_offset +
-               tc->mk2.lfsr2_repetition;
+               tc->mk2.lfsr2_idx;
 }
 
 /* 

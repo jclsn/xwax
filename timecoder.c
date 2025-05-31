@@ -651,9 +651,9 @@ static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
      */
 
     if (tc->secondary.positive)
-        mk2_process_subcode(tc, &tc->upper_subcode, reading);
+        mk2_process_subcode(tc, &tc->mk2.upper_subcode, reading);
     else if (!tc->secondary.positive)
-        mk2_process_subcode(tc, &tc->lower_subcode, reading);
+        mk2_process_subcode(tc, &tc->mk2.lower_subcode, reading);
 
     /* 
      * When the signal is flipped, the negative half-cycle is on the positive side and vice versa. 
@@ -661,12 +661,12 @@ static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
      * by probing, which is not optimal, but works for now.
      */
 
-    if (tc->lower_subcode.valid_counter > tc->upper_subcode.valid_counter) {
-        tc->bitstream = tc->lower_subcode.bitstream;
-        tc->timecode = tc->lower_subcode.timecode;
+    if (tc->mk2.lower_subcode.valid_counter > tc->mk2.upper_subcode.valid_counter) {
+        tc->bitstream = tc->mk2.lower_subcode.bitstream;
+        tc->timecode = tc->mk2.lower_subcode.timecode;
     } else {
-        tc->bitstream = tc->upper_subcode.bitstream;
-        tc->timecode = tc->upper_subcode.timecode;
+        tc->bitstream = tc->mk2.upper_subcode.bitstream;
+        tc->timecode = tc->mk2.upper_subcode.timecode;
     }
 
     if (tc->timecode == tc->bitstream) {
