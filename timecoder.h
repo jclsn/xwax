@@ -65,6 +65,7 @@ struct timecoder_channel {
 };
 
 struct mk2_subcode {
+    u128 window;
     bits_t bitstream;
     bits_t timecode;
     bits_t bit;

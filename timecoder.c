@@ -628,6 +628,12 @@ inline static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode 
     detect_bit_flip(current_slope, tc->secondary.mk2.rms, reading, sc->avg_reading, &sc->bit,
                     &sc->recent_bit_flip, tc->forwards, !tc->secondary.positive);
 
+    /* Append the new bit to the 110-bit window */
+    mk2_window_append(&sc->window, U128(0x0, sc->bit));
+
+    /* Convert the 110-bit window to 22-bits */
+    sc->bitstream = mk2_decimate(sc->window);
+
     if (lfsr_verify(tc->def, &sc->timecode, &sc->bitstream, sc->bit, tc->forwards)) {
         (sc->valid_counter)++;
     } else {
