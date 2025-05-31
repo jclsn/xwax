@@ -662,14 +662,14 @@ static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
      */
 
     if (tc->lower_subcode.valid_counter > tc->upper_subcode.valid_counter) {
-        tc->mk2_bitstream = tc->lower_subcode.bitstream;
-        tc->mk2_timecode = tc->lower_subcode.timecode;
+        tc->bitstream = tc->lower_subcode.bitstream;
+        tc->timecode = tc->lower_subcode.timecode;
     } else {
-        tc->mk2_bitstream = tc->upper_subcode.bitstream;
-        tc->mk2_timecode = tc->upper_subcode.timecode;
+        tc->bitstream = tc->upper_subcode.bitstream;
+        tc->timecode = tc->upper_subcode.timecode;
     }
 
-    if (tc->mk2_timecode == tc->mk2_bitstream) {
+    if (tc->timecode == tc->bitstream) {
         tc->valid_counter++;
     } else {
         tc->timecode = tc->bitstream;
