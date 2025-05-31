@@ -228,4 +228,14 @@ static inline bits_t mk2_decimate(u128 window)
     return decimated;
 }
 
+/* 
+ * Appends the new bit to the 110-bit window
+ */
+
+static inline void mk2_window_append(u128 *window, const u128 bit)
+{
+    *window = u128_lshift(*window, 1);
+    *window = u128_and(*window, bit);
+}
+
 #endif
