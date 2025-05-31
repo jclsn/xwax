@@ -732,43 +732,39 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 }
 
 /*
- * Process a single sample from the incoming audio
- *
- * The two input signals (primary and secondary) are in the full range
- * of a signed int; ie. 32-bit signed.
+ * Computes a scaled derivative for both channels which can be used by xwax for pitch detection 
  */
-
 
 static void mk2_compute_derivative(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
-    delayline_push(&tc->primary.mk2.delayline, primary);
-    delayline_push(&tc->secondary.mk2.delayline, secondary);
+        delayline_push(&tc->primary.mk2.delayline, primary);
+        delayline_push(&tc->secondary.mk2.delayline, secondary);
 
-    /* Compute the discrete derivative */
-    tc->primary.mk2.deriv = derivative(&tc->primary.mk2.differentiator,
-                                       ema(&tc->primary.mk2.ema_filter, primary));
-    tc->secondary.mk2.deriv = derivative(&tc->secondary.mk2.differentiator,
-                                         ema(&tc->secondary.mk2.ema_filter, secondary));
+        /* Compute the discrete derivative */
+        tc->primary.mk2.deriv = derivative(&tc->primary.mk2.differentiator,
+                                           ema(&tc->primary.mk2.ema_filter, primary));
+        tc->secondary.mk2.deriv = derivative(&tc->secondary.mk2.differentiator,
+                                             ema(&tc->secondary.mk2.ema_filter, secondary));
 
-    /* Compute the smoothed RMS value */
-    tc->primary.mk2.rms = rms(&tc->primary.mk2.rms_filter, primary);
-    tc->secondary.mk2.rms = rms(&tc->secondary.mk2.rms_filter, secondary);
+        /* Compute the smoothed RMS value */
+        tc->primary.mk2.rms = rms(&tc->primary.mk2.rms_filter, primary);
+        tc->secondary.mk2.rms = rms(&tc->secondary.mk2.rms_filter, secondary);
 
-    /* Compute the smoothed RMS value for the derivative */
-    tc->primary.mk2.rms_deriv = rms(&tc->primary.mk2.rms_deriv_filter, tc->primary.mk2.deriv);
-    tc->secondary.mk2.rms_deriv = rms(&tc->secondary.mk2.rms_deriv_filter, tc->secondary.mk2.deriv);
+        /* Compute the smoothed RMS value for the derivative */
+        tc->primary.mk2.rms_deriv = rms(&tc->primary.mk2.rms_deriv_filter, tc->primary.mk2.deriv);
+        tc->secondary.mk2.rms_deriv = rms(&tc->secondary.mk2.rms_deriv_filter, tc->secondary.mk2.deriv);
 
-    /* Compute the gain compensation for the derivative*/
-    tc->gain_compensation = (double) tc->secondary.mk2.rms / tc->secondary.mk2.rms_deriv;
-    if (tc->gain_compensation > 30.0) // without this limit pitch becomes too sensitive
-        tc->gain_compensation = 30.0;
+        /* Compute the gain compensation for the derivative*/
+        tc->gain_compensation = (double) tc->secondary.mk2.rms / tc->secondary.mk2.rms_deriv;
+        if (tc->gain_compensation > 30.0) // without this limit pitch becomes too sensitive
+            tc->gain_compensation = 30.0;
 
-    tc->dB = 20 * log10((double) tc->secondary.mk2.rms / INT_MAX);
+        tc->dB = 20 * log10((double) tc->secondary.mk2.rms / INT_MAX);
 
-    /* Compute the scaled derivative */
-    tc->primary.mk2.deriv_scaled = tc->primary.mk2.deriv * tc->gain_compensation;
-    tc->secondary.mk2.deriv_scaled = tc->secondary.mk2.deriv * tc->gain_compensation;
+        /* Compute the scaled derivative */
+        tc->primary.mk2.deriv_scaled = tc->primary.mk2.deriv * tc->gain_compensation;
+        tc->secondary.mk2.deriv_scaled = tc->secondary.mk2.deriv * tc->gain_compensation;
 }
 
 /*
