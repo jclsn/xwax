@@ -640,16 +640,26 @@ static inline void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode 
     }
 }
 
-static void mk2_process_bitstream(struct timecoder *tc, signed int reading) {
+/* 
+ * Extracts the MK2 bitstreams from the samples.
+ */
+
+static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
 
     /*
-     * Detect if the offset jumps on upper and lower bitstream
+     * Detect if the offset jumps on upper and lower bitstream. 
      */
 
     if (tc->secondary.positive)
         mk2_process_subcode(tc, &tc->upper_subcode, reading);
     else if (!tc->secondary.positive)
         mk2_process_subcode(tc, &tc->lower_subcode, reading);
+
+    /* 
+     * When the signal is flipped, the negative half-cycle is on the positive side and vice versa. 
+     * In this case the lower bitstream is used for timecode detection. This is currently done 
+     * by probing, which is not optimal, but works for now.
+     */
 
     if (tc->lower_subcode.valid_counter > tc->upper_subcode.valid_counter) {
         tc->mk2_bitstream = tc->lower_subcode.bitstream;
@@ -828,13 +838,9 @@ static void process_sample(struct timecoder *tc,
      * it's time to read off a timecode 0 or 1 value */
 
     if (tc->def->flags & TRAKTOR_MK2) {
-        if (tc->primary.swapped || tc->secondary.swapped)
-        {
-            signed int m;
-            /* scale to avoid clipping */
-            m = abs(tc->primary.mk2.deriv / 2 - tc->primary.zero / 2);
-            tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
-            tc->ref_level += m / REF_PEAKS_AVG;
+        if (tc->secondary.swapped) {
+            int reading = *delayline_at(&tc->secondary.mk2.delayline, 3);
+            mk2_process_bitstreams(tc, reading);
         }
     } else {
         if (tc->secondary.swapped &&
