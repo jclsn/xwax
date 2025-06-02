@@ -208,6 +208,21 @@ static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
                tc->mk2.lfsr2_idx;
 }
 
+/*
+ * Reset the indexes for the primary and secondary LFSR in case of bit errors
+ */
+
+static inline void mk2_reset_indexes(struct timecoder *tc)
+{
+    if (tc->forwards) {
+        tc->mk2.lfsr1_idx = 0;
+        tc->mk2.lfsr2_idx = 0;
+    } else {
+        tc->mk2.lfsr1_idx = 3;
+        tc->mk2.lfsr2_idx = 2;
+    }
+}
+
 /* 
  * Decimates the 110-bit LFSR to a 22-bit LFSR by taking only every fifth value into account
  */
