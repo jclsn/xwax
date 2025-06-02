@@ -239,4 +239,16 @@ static inline void mk2_window_append(u128 *window, const u128 bit)
     *window = u128_and(*window, bit);
 }
 
+/* 
+ * Prepends the new bit to the 110-bit window
+ */
+
+static inline void mk2_window_prepend(u128 *window, const u128 bit, const unsigned int bits)
+{
+    u128 mask = u128_lshift(bit, bits);
+    *window = u128_lshift(*window, 1);
+    *window = u128_rshift(*window, 1);
+    *window = u128_or(*window, mask);
+}
+
 #endif

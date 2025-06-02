@@ -606,11 +606,7 @@ static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_
         return false;
 }
 
-/* 
- * Process the upper or lower subcode
- */
-
-inline static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+static void mk2_demodulate_bit(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
 {
     int current_slope[2];
 
@@ -627,9 +623,21 @@ inline static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode 
     /* The bits only change when an offset jump occurs. Else the previous bit is taken */
     detect_bit_flip(current_slope, tc->secondary.mk2.rms, reading, sc->avg_reading, &sc->bit,
                     &sc->recent_bit_flip, tc->forwards, !tc->secondary.positive);
+}
 
-    /* Append the new bit to the 110-bit window */
-    mk2_window_append(&sc->window, U128(0x0, sc->bit));
+/* 
+ * Process the upper or lower subcode
+ */
+
+static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+{
+    mk2_demodulate_bit(tc, sc, reading);
+
+    /* Append or prepend the new bit to the 110-bit window */
+    if (tc->forwards)
+        mk2_window_append(&sc->window, U128(0x0, sc->bit));
+    else
+        mk2_window_prepend(&sc->window, U128(0x0, sc->bit), tc->def->bits);
 
     /* Convert the 110-bit window to 22-bits */
     sc->bitstream = mk2_decimate(sc->window);
