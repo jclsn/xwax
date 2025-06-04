@@ -64,8 +64,13 @@ struct timecoder_channel {
     struct timecoder_channel_mk2 mk2;
 };
 
+struct mk2_sub_lfsr {
+    slot_no_t slot;
+    unsigned int idx;
+    size_t idx_max;
+};
+
 struct mk2_subcode {
-    u128 window;
     bits_t bitstream;
     bits_t timecode;
     bits_t bit;
@@ -78,18 +83,14 @@ struct mk2_subcode {
     struct delayline readings;
     struct ema_filter ema_reading;
     struct ema_filter ema_slope;
+
+    u128 window;
+    struct mk2_sub_lfsr sub_lfsr[2];
+    int current_sub_lfsr;
 };
 
 struct timecode_mk2 {
     struct mk2_subcode upper_subcode, lower_subcode;
-
-    slot_no_t lfsr1_slot;
-    slot_no_t lfsr2_slot;
-
-    unsigned int lfsr1_idx;
-    unsigned int lfsr2_idx;
-
-    bool is_lfsr1;
 };
 
 struct timecoder {
@@ -196,30 +197,30 @@ static inline double timecoder_revs_per_sec(struct timecoder *tc)
  * Computes the actual timecode slot from LFSR1 or LFSR2 of the Traktor MK2 timecode
  */
 
-static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc)
+static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc, struct mk2_subcode *sc)
 {
-    static const slot_no_t lfsr1_multiplier = 5;
-    static const slot_no_t lfsr2_offset = 3;
+    static const slot_no_t multiplier = 5; // Base multiplication by five to reconstruct slot
+    static const slot_no_t offset_of_secondary = 3; // The secondary LFSR has a fixed offset of 3
 
-    if (tc->mk2.is_lfsr1)
-        return (tc->mk2.lfsr1_slot * lfsr1_multiplier) + tc->mk2.lfsr1_idx;
+    if (sc->current_sub_lfsr)
+        return (sc->sub_lfsr[0].slot * multiplier) + sc->sub_lfsr[0].idx;
     else
-        return ((tc->mk2.lfsr2_slot - 1) * lfsr1_multiplier) + lfsr2_offset +
-               tc->mk2.lfsr2_idx;
+        return ((sc->sub_lfsr[1].slot - 1) * multiplier) + offset_of_secondary +
+               sc->sub_lfsr[1].idx;
 }
 
 /*
  * Reset the indexes for the primary and secondary LFSR in case of bit errors
  */
 
-static inline void mk2_reset_indexes(struct timecoder *tc)
+static inline void mk2_reset_indexes(struct mk2_subcode *sc, bool forwards)
 {
-    if (tc->forwards) {
-        tc->mk2.lfsr1_idx = 0;
-        tc->mk2.lfsr2_idx = 0;
+    if (forwards) {
+        sc->sub_lfsr[0].idx = 0;
+        sc->sub_lfsr[1].idx = 0;
     } else {
-        tc->mk2.lfsr1_idx = 3;
-        tc->mk2.lfsr2_idx = 2;
+        sc->sub_lfsr[0].idx = 2;
+        sc->sub_lfsr[1].idx = 1;
     }
 }
 
@@ -264,6 +265,17 @@ static inline void mk2_window_prepend(u128 *window, const u128 bit, const unsign
     *window = u128_lshift(*window, 1);
     *window = u128_rshift(*window, 1);
     *window = u128_or(*window, mask);
+}
+
+static inline void sub_lfsr_fwd(struct mk2_sub_lfsr *lfsr) 
+{
+    lfsr->idx = ++lfsr->idx % lfsr->idx_max;
+}
+
+static inline void sub_lfsr_rev(struct mk2_sub_lfsr *lfsr) 
+{
+    if (--lfsr->idx < 0)
+        lfsr->idx = 0;
 }
 
 #endif

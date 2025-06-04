@@ -589,6 +589,16 @@ static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_r
     }
 }
 
+static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_subcode *sc, bits_t bit, bool forwards)
+{
+    if (forwards) {
+
+        
+    } else {
+
+    }
+}
+
 static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_t *bitstream,
         bits_t bit, bool forwards)
 {
@@ -642,7 +652,9 @@ static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, si
     /* Convert the 110-bit window to 22-bits */
     sc->bitstream = mk2_decimate(sc->window);
 
-    if (lfsr_verify(tc->def, &sc->timecode, &sc->bitstream, sc->bit, tc->forwards)) {
+    bool result = lfsr_verify(tc->def, &sc->timecode, &sc->bitstream, sc->bit, tc->forwards);
+
+    if (result) {
         (sc->valid_counter)++;
     } else {
         sc->timecode = sc->bitstream;
