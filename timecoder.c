@@ -202,58 +202,6 @@ static struct timecode_def timecodes[] = {
 };
 
 /*
- * Calculate LFSR bit
- */
-
-static inline bits_t lfsr(bits_t code, bits_t taps)
-{
-    bits_t taken;
-    int xrs;
-
-    taken = code & taps;
-    xrs = 0;
-    while (taken != 0x0) {
-        xrs += taken & 0x1;
-        taken >>= 1;
-    }
-
-    return xrs & 0x1;
-}
-
-
-/*
- * Linear Feedback Shift Register in the forward direction. New values
- * are generated at the least-significant bit.
- */
-
-static inline bits_t fwd(bits_t current, struct timecode_def *def)
-{
-    bits_t l;
-
-    /* New bits are added at the MSB; shift right by one */
-
-    l = lfsr(current, def->taps | 0x1);
-    return (current >> 1) | (l << (def->bits - 1));
-}
-
-
-/*
- * Linear Feedback Shift Register in the reverse direction
- */
-
-static inline bits_t rev(bits_t current, struct timecode_def *def)
-{
-    bits_t l, mask;
-
-    /* New bits are added at the LSB; shift left one and mask */
-
-    mask = (1 << def->bits) - 1;
-    l = lfsr(current, (def->taps >> 1) | (0x1 << (def->bits - 1)));
-    return ((current << 1) & mask) | l;
-}
-
-
-/*
  * Where necessary, build the lookup table required for this timecode
  *
  * Return: -1 if not enough memory could be allocated, otherwise 0
@@ -283,8 +231,8 @@ static int build_lookup(struct timecode_def *def)
         lut_push(&def->lut, current);
 
         /* check symmetry of the lfsr functions */
-        next = fwd(current, def);
-        assert(rev(next, def) == current);
+        next = fwd(current, def->taps, def->bits);
+        assert(rev(next, def->taps, def->bits) == current);
 
         current = next;
     }
@@ -328,10 +276,10 @@ static int build_lookup_mk2(struct timecode_def *def)
         lut_push(&def->lut2, current2);
 
         /* check symmetry of the lfsr functions */
-        next = fwd(current, def);
-        next2 = fwd(current2, def);
-        assert(rev(next, def) == current);
-        assert(rev(next2, def) == current2);
+        next = fwd(current, def->taps, def->bits);
+        next2 = fwd(current2, def->taps, def->bits);
+        assert(rev(next, def->taps, def->bits) == current);
+        assert(rev(next2, def->taps, def->bits) == current2);
 
         current = next;
         current2 = next2;
@@ -455,6 +403,7 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->timecode_ticker = 0;
 
     tc->mon = NULL;
+
 }
 
 /*
@@ -589,25 +538,28 @@ static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_r
     }
 }
 
-static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_subcode *sc, bits_t bit, bool forwards)
+static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_subcode *sc, struct mk2_sub_lfsr *sub_lfsr, bool forwards)
 {
-    if (forwards) {
+    if (forwards && !sub_lfsr->idx)
+            sc->timecode = fwd(sc->timecode, def->taps, def->bits);
+    else if (!forwards && sub_lfsr->idx == sub_lfsr->idx_max - 1 )
+            sc->timecode = rev(sc->timecode, def->taps, def->bits);
 
-        
-    } else {
-
-    }
+    if (sc->timecode == sc->bitstream)
+        return true;
+    else
+        return false;
 }
 
 static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_t *bitstream,
         bits_t bit, bool forwards)
 {
     if (forwards) {
-        *timecode = fwd(*timecode, def);
+        *timecode = fwd(*timecode, def->taps, def->bits);
         *bitstream = (*bitstream >> 1) + (bit << (def->bits - 1));
     } else {
         bits_t mask = (1 << def->bits) - 1;
-        *timecode = rev(*timecode, def);
+        *timecode = rev(*timecode, def->taps, def->bits);
         *bitstream = ((*bitstream << 1) & mask) + bit;
     }
     if (*timecode == *bitstream)
@@ -644,10 +596,11 @@ static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, si
     mk2_demodulate_bit(tc, sc, reading);
 
     /* Append or prepend the new bit to the 110-bit window */
-    if (tc->forwards)
+    if (tc->forwards) {
         mk2_window_append(&sc->window, U128(0x0, sc->bit));
-    else
+    } else {
         mk2_window_prepend(&sc->window, U128(0x0, sc->bit), tc->def->bits);
+    }
 
     /* Convert the 110-bit window to 22-bits */
     sc->bitstream = mk2_decimate(sc->window);
@@ -728,7 +681,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
      * the vinyl, regardless of the direction. */
 
     if (tc->forwards) {
-	tc->timecode = fwd(tc->timecode, tc->def);
+	tc->timecode = fwd(tc->timecode, tc->def->taps, tc->def->bits);
 	tc->bitstream = (tc->bitstream >> 1)
 	    + (b << (tc->def->bits - 1));
 
@@ -736,7 +689,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 	bits_t mask;
 
 	mask = ((1 << tc->def->bits) - 1);
-	tc->timecode = rev(tc->timecode, tc->def);
+	tc->timecode = rev(tc->timecode, tc->def->taps, tc->def->bits);
 	tc->bitstream = ((tc->bitstream << 1) & mask) + b;
     }
 

@@ -22,6 +22,8 @@
 
 #include <stdbool.h>
 
+#include "lfsr.h"
+#include "lfsr_mk2.h"
 #include "filters.h"
 #include "lut.h"
 #include "pitch.h"
@@ -85,7 +87,7 @@ struct mk2_subcode {
     struct ema_filter ema_slope;
 
     u128 window;
-    struct mk2_sub_lfsr sub_lfsr[2];
+    struct mk2_lfsr mk2_lfsr;
     int current_sub_lfsr;
 };
 
@@ -190,92 +192,6 @@ static inline double timecoder_get_resolution(struct timecoder *tc)
 static inline double timecoder_revs_per_sec(struct timecoder *tc)
 {
     return (33.0 + 1.0 / 3) * tc->speed / 60;
-}
-
-
-/*
- * Computes the actual timecode slot from LFSR1 or LFSR2 of the Traktor MK2 timecode
- */
-
-static inline slot_no_t mk2_compute_actual_slot(struct timecoder *tc, struct mk2_subcode *sc)
-{
-    static const slot_no_t multiplier = 5; // Base multiplication by five to reconstruct slot
-    static const slot_no_t offset_of_secondary = 3; // The secondary LFSR has a fixed offset of 3
-
-    if (sc->current_sub_lfsr)
-        return (sc->sub_lfsr[0].slot * multiplier) + sc->sub_lfsr[0].idx;
-    else
-        return ((sc->sub_lfsr[1].slot - 1) * multiplier) + offset_of_secondary +
-               sc->sub_lfsr[1].idx;
-}
-
-/*
- * Reset the indexes for the primary and secondary LFSR in case of bit errors
- */
-
-static inline void mk2_reset_indexes(struct mk2_subcode *sc, bool forwards)
-{
-    if (forwards) {
-        sc->sub_lfsr[0].idx = 0;
-        sc->sub_lfsr[1].idx = 0;
-    } else {
-        sc->sub_lfsr[0].idx = 2;
-        sc->sub_lfsr[1].idx = 1;
-    }
-}
-
-/* 
- * Decimates the 110-bit LFSR to a 22-bit LFSR by taking only every fifth value into account
- */
-
-static inline bits_t mk2_decimate(u128 window)
-{
-    static const size_t decimation_factor = 5;
-    static const size_t resulting_bits = 22;
-
-    bits_t decimated = 0;
-    bits_t shifted = 0;
-
-    for (size_t i = 0; i < resulting_bits; i++) {
-        shifted = u128_and(window, U128_ONE).low << i;
-        decimated |= shifted;
-        u128_rshift(window, decimation_factor);
-    }
-    
-    return decimated;
-}
-
-/* 
- * Appends the new bit to the 110-bit window
- */
-
-static inline void mk2_window_append(u128 *window, const u128 bit)
-{
-    *window = u128_lshift(*window, 1);
-    *window = u128_and(*window, bit);
-}
-
-/* 
- * Prepends the new bit to the 110-bit window
- */
-
-static inline void mk2_window_prepend(u128 *window, const u128 bit, const unsigned int bits)
-{
-    u128 mask = u128_lshift(bit, bits);
-    *window = u128_lshift(*window, 1);
-    *window = u128_rshift(*window, 1);
-    *window = u128_or(*window, mask);
-}
-
-static inline void sub_lfsr_fwd(struct mk2_sub_lfsr *lfsr) 
-{
-    lfsr->idx = ++lfsr->idx % lfsr->idx_max;
-}
-
-static inline void sub_lfsr_rev(struct mk2_sub_lfsr *lfsr) 
-{
-    if (--lfsr->idx < 0)
-        lfsr->idx = 0;
 }
 
 #endif
