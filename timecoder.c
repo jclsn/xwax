@@ -30,6 +30,10 @@
  *
  */
 
+#include "lfsr_mk2.h"
+#include "lfsr_mk2.h"
+#include "types.h"
+#include "types.h"
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
@@ -339,7 +343,7 @@ void timecoder_free_lookup(void) {
  * Initialise filter values for the MK2 demodulation
  */
 
-static void init_mk2_channel(struct timecoder_channel *ch)
+static void mk2_init_channel(struct timecoder_channel *ch)
 {
     ch->mk2.deriv_scaled = INT_MAX/2;
     ch->mk2.rms = INT_MAX/2;
@@ -363,7 +367,7 @@ static void init_channel(struct timecode_def *def, struct timecoder_channel *ch)
     ch->zero = 0;
 
     if (def->flags & TRAKTOR_MK2)
-        init_mk2_channel(ch);
+        mk2_init_channel(ch);
 }
 
 /*
@@ -401,6 +405,13 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->timecode = 0;
     tc->valid_counter = 0;
     tc->timecode_ticker = 0;
+
+    tc->upper.decimation_window = U128_ZERO;
+    tc->lower.decimation_window = U128_ZERO;
+    mk2_lfsr_init(&tc->upper.mk2_timecode);
+    mk2_lfsr_init(&tc->lower.mk2_timecode);
+    delayline_init(&tc->upper.readings);
+    delayline_init(&tc->lower.readings);
 
     tc->mon = NULL;
 
@@ -538,14 +549,14 @@ static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_r
     }
 }
 
-static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_subcode *sc, struct mk2_sub_lfsr *sub_lfsr, bool forwards)
+static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_timecode *lfsr, bits_t bitstream, bool forwards)
 {
-    if (forwards && !sub_lfsr->idx)
-            sc->timecode = fwd(sc->timecode, def->taps, def->bits);
-    else if (!forwards && sub_lfsr->idx == sub_lfsr->idx_max - 1 )
-            sc->timecode = rev(sc->timecode, def->taps, def->bits);
+    if (forwards)
+        mk2_lfsr_fwd(lfsr, def->taps, def->bits);
+    else
+        mk2_lfsr_rev(lfsr, def->taps, def->bits);
 
-    if (sc->timecode == sc->bitstream)
+    if (lfsr->lfsr[lfsr->current].timecode == bitstream)
         return true;
     else
         return false;
@@ -568,7 +579,7 @@ static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_
         return false;
 }
 
-static void mk2_demodulate_bit(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+static void demodulate_bit(struct timecoder *tc, struct timecoder_mk2 *sc, signed int reading)
 {
     int current_slope[2];
 
@@ -588,24 +599,27 @@ static void mk2_demodulate_bit(struct timecoder *tc, struct mk2_subcode *sc, sig
 }
 
 /* 
- * Process the upper or lower subcode
+ * Process the upper or lower timecode
  */
 
-static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, signed int reading)
+static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, signed int reading)
 {
-    mk2_demodulate_bit(tc, sc, reading);
+    demodulate_bit(tc, sc, reading);
 
     /* Append or prepend the new bit to the 110-bit window */
     if (tc->forwards) {
-        mk2_window_append(&sc->window, U128(0x0, sc->bit));
+        mk2_window_append(&sc->decimation_window, U128(0x0, sc->bit));
     } else {
-        mk2_window_prepend(&sc->window, U128(0x0, sc->bit), tc->def->bits);
+        mk2_window_prepend(&sc->decimation_window, U128(0x0, sc->bit), tc->def->bits);
     }
 
     /* Convert the 110-bit window to 22-bits */
-    sc->bitstream = mk2_decimate(sc->window);
+    sc->bitstream = mk2_lfsr_decimate(sc->decimation_window);
 
-    bool result = lfsr_verify(tc->def, &sc->timecode, &sc->bitstream, sc->bit, tc->forwards);
+    /* bool result = lfsr_verify(tc->def, &mk2->timecode, &mk2->bitstream, mk2->bit, tc->forwards); */
+    bool result = lfsr_verify2(tc->def, &sc->mk2_timecode, sc->bitstream, tc->forwards);
+
+    sc->timecode = sc->mk2_timecode.lfsr[sc->mk2_timecode.current].timecode;
 
     if (result) {
         (sc->valid_counter)++;
@@ -619,16 +633,16 @@ static void mk2_process_subcode(struct timecoder *tc, struct mk2_subcode *sc, si
  * Extracts the MK2 bitstreams from the samples.
  */
 
-static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
+static void process_bitstreams(struct timecoder *tc, signed int reading) {
 
     /*
      * Detect if the offset jumps on upper and lower bitstream. 
      */
 
     if (tc->secondary.positive)
-        mk2_process_subcode(tc, &tc->mk2.upper_subcode, reading);
+        process_timecode(tc, &tc->upper, reading);
     else if (!tc->secondary.positive)
-        mk2_process_subcode(tc, &tc->mk2.lower_subcode, reading);
+        process_timecode(tc, &tc->lower, reading);
 
     /* 
      * When the signal is flipped, the negative half-cycle is on the positive side and vice versa. 
@@ -636,12 +650,12 @@ static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
      * by probing, which is not optimal, but works for now.
      */
 
-    if (tc->mk2.lower_subcode.valid_counter > tc->mk2.upper_subcode.valid_counter) {
-        tc->bitstream = tc->mk2.lower_subcode.bitstream;
-        tc->timecode = tc->mk2.lower_subcode.timecode;
+    if (tc->lower.valid_counter > tc->upper.valid_counter) {
+        tc->bitstream = tc->lower.bitstream;
+        tc->timecode = tc->lower.timecode;
     } else {
-        tc->bitstream = tc->mk2.upper_subcode.bitstream;
-        tc->timecode = tc->mk2.upper_subcode.timecode;
+        tc->bitstream = tc->upper.bitstream;
+        tc->timecode = tc->upper.timecode;
     }
 
     if (tc->timecode == tc->bitstream) {
@@ -658,7 +672,7 @@ static void mk2_process_bitstreams(struct timecoder *tc, signed int reading) {
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
     tc->ref_level += abs((int) (tc->secondary.mk2.rms_deriv * tc->gain_compensation)) / REF_PEAKS_AVG;
 
-    debug("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", */
+    debug("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", 
            tc->upper.valid_counter,
            tc->lower.valid_counter,
            tc->forwards);
@@ -720,7 +734,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
  * Computes a scaled derivative for both channels which can be used by xwax for pitch detection 
  */
 
-static void mk2_compute_derivative(struct timecoder *tc,
+static void compute_derivative(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
         delayline_push(&tc->primary.mk2.delayline, primary);
@@ -764,7 +778,7 @@ static void process_sample(struct timecoder *tc,
 {
         /* Push the samples into the ringbuffer */
     if (tc->def->flags & TRAKTOR_MK2) {
-        mk2_compute_derivative(tc, primary, secondary);
+        compute_derivative(tc, primary, secondary);
 
         detect_zero_crossing(&tc->primary, tc->primary.mk2.deriv_scaled, tc->zero_alpha, tc->threshold);
         detect_zero_crossing(&tc->secondary, tc->secondary.mk2.deriv_scaled, tc->zero_alpha, tc->threshold);
@@ -815,7 +829,7 @@ static void process_sample(struct timecoder *tc,
     if (tc->def->flags & TRAKTOR_MK2) {
         if (tc->secondary.swapped) {
             int reading = *delayline_at(&tc->secondary.mk2.delayline, 3);
-            mk2_process_bitstreams(tc, reading);
+            process_bitstreams(tc, reading);
         }
     } else {
         if (tc->secondary.swapped &&

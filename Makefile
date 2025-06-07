@@ -40,10 +40,10 @@ DOCDIR ?= $(PREFIX)/share/doc
 
 # Build flags
 
-CFLAGS ?= -O3
+CFLAGS ?= -O0 -fsanitize=address -fno-omit-frame-pointer
 CFLAGS += -Wall
 CPPFLAGS += -MMD -MP
-LDFLAGS ?= -O3
+LDFLAGS ?= -O0 -fsanitize=address
 
 # Core objects and libraries
 
@@ -58,6 +58,7 @@ OBJS = controller.o \
 	filters.o \
 	index.o \
 	interface.o \
+	lfsr_mk2.o \
 	library.o \
 	listbox.o \
 	lut.o \
@@ -179,7 +180,7 @@ tests/observer:	tests/observer.o
 
 tests/status:	tests/status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o types.o filters.o delayline.o
+tests/timecoder:	tests/timecoder.o lfsr_mk2.o lut.o timecoder.o types.o filters.o delayline.o
 tests/timecoder:	LDFLAGS += -lm
 tests/timecoder:	LDLIBS += -lm
 

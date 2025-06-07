@@ -66,13 +66,7 @@ struct timecoder_channel {
     struct timecoder_channel_mk2 mk2;
 };
 
-struct mk2_sub_lfsr {
-    slot_no_t slot;
-    unsigned int idx;
-    size_t idx_max;
-};
-
-struct mk2_subcode {
+struct timecoder_mk2 {
     bits_t bitstream;
     bits_t timecode;
     bits_t bit;
@@ -86,13 +80,8 @@ struct mk2_subcode {
     struct ema_filter ema_reading;
     struct ema_filter ema_slope;
 
-    u128 window;
-    struct mk2_lfsr mk2_lfsr;
-    int current_sub_lfsr;
-};
-
-struct timecode_mk2 {
-    struct mk2_subcode upper_subcode, lower_subcode;
+    u128 decimation_window;
+    struct mk2_timecode mk2_timecode;
 };
 
 struct timecoder {
@@ -128,7 +117,7 @@ struct timecoder {
     double gain_compensation; /* Scaling factor for the derivative */
 
     /* MK2 quirks */
-    struct timecode_mk2 mk2;
+    struct timecoder_mk2 upper, lower;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
