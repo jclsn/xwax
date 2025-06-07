@@ -549,19 +549,6 @@ static inline void detect_bit_flip(int slope[2], int rms, int reading, int avg_r
     }
 }
 
-static inline bool lfsr_verify2(struct timecode_def *def, struct mk2_timecode *lfsr, bits_t bitstream, bool forwards)
-{
-    if (forwards)
-        mk2_lfsr_fwd(lfsr, def->taps, def->bits);
-    else
-        mk2_lfsr_rev(lfsr, def->taps, def->bits);
-
-    if (lfsr->lfsr[lfsr->current].timecode == bitstream)
-        return true;
-    else
-        return false;
-}
-
 static inline bool lfsr_verify(struct timecode_def *def, bits_t *timecode, bits_t *bitstream,
         bits_t bit, bool forwards)
 {
@@ -606,25 +593,22 @@ static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, sig
 {
     demodulate_bit(tc, sc, reading);
 
-    /* Append or prepend the new bit to the 110-bit window */
     if (tc->forwards) {
         mk2_window_fwd(&sc->decimation_window, sc->bit);
+        mk2_lfsr_fwd(&sc->mk2_timecode, tc->def->taps, tc->def->bits);
     } else {
         mk2_window_rev(&sc->decimation_window, sc->bit);
+        mk2_lfsr_rev(&sc->mk2_timecode, tc->def->taps, tc->def->bits);
     }
 
-    /* Convert the 110-bit window to 22-bits */
     sc->bitstream = mk2_lfsr_decimate(sc->decimation_window);
-
-    /* bool result = lfsr_verify(tc->def, &mk2->timecode, &mk2->bitstream, mk2->bit, tc->forwards); */
-    bool result = lfsr_verify2(tc->def, &sc->mk2_timecode, sc->bitstream, tc->forwards);
-
     sc->timecode = &sc->mk2_timecode.lfsr[sc->mk2_timecode.current].timecode;
 
-    if (result) {
+    if (*sc->timecode == sc->bitstream) {
         (sc->valid_counter)++;
     } else {
         *sc->timecode = sc->bitstream;
+        mk2_lfsr_reset(&sc->mk2_timecode);
         sc->valid_counter = 0;
     }
 }
