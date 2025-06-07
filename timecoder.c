@@ -608,9 +608,9 @@ static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, sig
 
     /* Append or prepend the new bit to the 110-bit window */
     if (tc->forwards) {
-        mk2_window_append(&sc->decimation_window, U128(0x0, sc->bit));
+        mk2_window_fwd(&sc->decimation_window, sc->bit);
     } else {
-        mk2_window_prepend(&sc->decimation_window, U128(0x0, sc->bit), tc->def->bits);
+        mk2_window_rev(&sc->decimation_window, sc->bit);
     }
 
     /* Convert the 110-bit window to 22-bits */
@@ -619,12 +619,12 @@ static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, sig
     /* bool result = lfsr_verify(tc->def, &mk2->timecode, &mk2->bitstream, mk2->bit, tc->forwards); */
     bool result = lfsr_verify2(tc->def, &sc->mk2_timecode, sc->bitstream, tc->forwards);
 
-    sc->timecode = sc->mk2_timecode.lfsr[sc->mk2_timecode.current].timecode;
+    sc->timecode = &sc->mk2_timecode.lfsr[sc->mk2_timecode.current].timecode;
 
     if (result) {
         (sc->valid_counter)++;
     } else {
-        sc->timecode = sc->bitstream;
+        *sc->timecode = sc->bitstream;
         sc->valid_counter = 0;
     }
 }
@@ -651,11 +651,13 @@ static void process_bitstreams(struct timecoder *tc, signed int reading) {
      */
 
     if (tc->lower.valid_counter > tc->upper.valid_counter) {
+        /* printf("actual_slot: %u\n", mk2_compute_actual_slot(&tc->lower.mk2_timecode)); */
         tc->bitstream = tc->lower.bitstream;
-        tc->timecode = tc->lower.timecode;
+        tc->timecode = *tc->lower.timecode;
     } else {
+        /* printf("actual_slot: %u\n", mk2_compute_actual_slot(&tc->upper.mk2_timecode)); */
         tc->bitstream = tc->upper.bitstream;
-        tc->timecode = tc->upper.timecode;
+        tc->timecode = *tc->upper.timecode;
     }
 
     if (tc->timecode == tc->bitstream) {
@@ -672,7 +674,7 @@ static void process_bitstreams(struct timecoder *tc, signed int reading) {
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
     tc->ref_level += abs((int) (tc->secondary.mk2.rms_deriv * tc->gain_compensation)) / REF_PEAKS_AVG;
 
-    debug("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", 
+    printf("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", 
            tc->upper.valid_counter,
            tc->lower.valid_counter,
            tc->forwards);

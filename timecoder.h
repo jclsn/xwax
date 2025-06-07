@@ -68,7 +68,7 @@ struct timecoder_channel {
 
 struct timecoder_mk2 {
     bits_t bitstream;
-    bits_t timecode;
+    bits_t *timecode;
     bits_t bit;
 
     unsigned int valid_counter;

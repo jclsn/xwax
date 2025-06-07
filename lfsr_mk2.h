@@ -27,8 +27,8 @@ void mk2_lfsr_rev(struct mk2_timecode *lfsr, bits_t taps, bits_t bits);
 void mk2_lfsr_reset(struct mk2_timecode *lfsr);
 bits_t mk2_lfsr_decimate(u128 window);
 
-void mk2_window_append(u128 *window, const u128 bit);
-void mk2_window_prepend(u128 *window, const u128 bit, const unsigned int bits);
+void mk2_window_fwd(u128 *window, const bits_t b);
+void mk2_window_rev(u128 *window, const bits_t b);
 
 slot_no_t mk2_compute_actual_slot(struct mk2_timecode *lfsr);
 

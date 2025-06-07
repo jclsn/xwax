@@ -1,3 +1,5 @@
+#include "types.h"
+#include "types.h"
 #include <errno.h>
 #include <stdio.h>
 
@@ -149,23 +151,27 @@ slot_no_t mk2_compute_actual_slot(struct mk2_timecode *lfsr)
  * Appends the new bit to the 110-bit window
  */
 
-void mk2_window_append(u128 *window, const u128 bit)
+void mk2_window_fwd(u128 *window, const bits_t b)
 {
     if (!window) {
         errno = EINVAL;
         perror(__func__);
         return;
     }
+    
+    u128 bit = U128(0x0, b);
+    static const unsigned int mk2_bits = 110;
 
-    *window = u128_lshift(*window, 1);
-    *window = u128_and(*window, bit);
+    u128 mask = u128_lshift(bit, mk2_bits - 1);
+    *window = u128_rshift(*window, 1);
+    *window = u128_add(*window, mask);
 }
 
 /* 
  * Prepends the new bit to the 110-bit window
  */
 
-void mk2_window_prepend(u128 *window, const u128 bit, const unsigned int bits)
+void mk2_window_rev(u128 *window, const bits_t b)
 {
     if (!window) {
         errno = EINVAL;
@@ -173,8 +179,9 @@ void mk2_window_prepend(u128 *window, const u128 bit, const unsigned int bits)
         return;
     }
 
-    u128 mask = u128_lshift(bit, bits);
-    *window = u128_lshift(*window, 1);
-    *window = u128_rshift(*window, 1);
-    *window = u128_or(*window, mask);
+    static const unsigned int mk2_bits = 110;
+    u128 bit = U128(0x0, b);
+
+    u128 mask = u128_sub(u128_lshift(U128_ONE, mk2_bits), U128_ONE);
+    *window = u128_add(u128_and(u128_lshift(*window, 1), mask), bit);
 }
