@@ -604,6 +604,10 @@ static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, sig
     sc->bitstream = mk2_lfsr_decimate(sc->decimation_window);
     sc->timecode = &sc->mk2_timecode.lfsr[sc->mk2_timecode.current].timecode;
 
+    u128_print(sc->decimation_window);
+    printf("bitstream: %x\n", sc->bitstream);
+    printf("timecode: %x\n\n", *sc->timecode);
+
     if (*sc->timecode == sc->bitstream) {
         (sc->valid_counter)++;
     } else {
@@ -658,10 +662,10 @@ static void process_bitstreams(struct timecoder *tc, signed int reading) {
     tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
     tc->ref_level += abs((int) (tc->secondary.mk2.rms_deriv * tc->gain_compensation)) / REF_PEAKS_AVG;
 
-    printf("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", 
-           tc->upper.valid_counter,
-           tc->lower.valid_counter,
-           tc->forwards);
+    /* printf("upper.valid_counter: %d, lower.valid_counter %d, forwards: %b\n", */ 
+    /*        tc->upper.valid_counter, */
+    /*        tc->lower.valid_counter, */
+    /*        tc->forwards); */
 }
 
 /*

@@ -40,10 +40,10 @@ DOCDIR ?= $(PREFIX)/share/doc
 
 # Build flags
 
-CFLAGS ?= -O0 -fsanitize=address -fno-omit-frame-pointer
+CFLAGS ?= -O0 # -fsanitize=address -fno-omit-frame-pointer
 CFLAGS += -Wall
 CPPFLAGS += -MMD -MP
-LDFLAGS ?= -O0 -fsanitize=address
+LDFLAGS ?= -O0 # -fsanitize=address
 
 # Core objects and libraries
 

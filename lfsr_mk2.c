@@ -120,7 +120,7 @@ bits_t mk2_lfsr_decimate(u128 window)
     for (size_t i = 0; i < resulting_bits; i++) {
         shifted = u128_and(window, U128_ONE).low << i;
         decimated |= shifted;
-        u128_rshift(window, decimation_factor);
+        window = u128_rshift(window, decimation_factor);
     }
 
     return decimated;
