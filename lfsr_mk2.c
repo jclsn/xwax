@@ -24,6 +24,17 @@ static void sub_lfsr_init(struct sub_lfsr *lfsr, size_t idx_max, slot_no_t start
     lfsr->timecode = 0;
 }
 
+void sub_lfsr_print(struct sub_lfsr *lfsr)
+{
+    if (!lfsr) {
+        errno = EINVAL;
+        perror(__func__);
+        return;
+    }
+
+    printf("slot: %d, idx: %zu, idx_max: %zu\n", lfsr->slot, lfsr->idx, lfsr->idx_max);
+}
+
 /* 
  * Initializes the struct for the actual LFSR 
  */
@@ -58,6 +69,19 @@ void mk2_lfsr_reset(struct mk2_timecode *lfsr)
     lfsr->lfsr[1].idx = 0;
 }
 
+void mk2_lfsr_print(struct mk2_timecode *lfsr)
+{
+    if (!lfsr) {
+        errno = EINVAL;
+        perror(__func__);
+        return;
+    }
+
+    struct sub_lfsr *current = &lfsr->lfsr[lfsr->current_lfsr];
+    printf("sub_lfsr[%d]\n\t", lfsr->current_lfsr);
+    sub_lfsr_print(current);
+}
+
 /* 
  * Advances the actual LFSR
  */
@@ -71,12 +95,13 @@ void mk2_lfsr_fwd(struct mk2_timecode *lfsr, bits_t taps, bits_t bits)
     }
 
     struct sub_lfsr *current = &lfsr->lfsr[lfsr->current_lfsr];
+    struct sub_lfsr *other = &lfsr->lfsr[!lfsr->current_lfsr];
 
     current->idx++;
 
     if (current->idx > current->idx_max) {
-        fwd(current->timecode, taps, bits);
-        current->idx = 0;
+        fwd(other->timecode, taps, bits);
+        other->idx = 0;
         lfsr->current_lfsr = !lfsr->current_lfsr;
     }
 }
@@ -159,12 +184,10 @@ void mk2_window_fwd(u128 *window, const bits_t b)
         return;
     }
     
-    u128 bit = U128(0x0, b);
     static const unsigned int mk2_bits = 110;
+    u128 bit = U128(0x0, b);
 
-    u128 mask = u128_lshift(bit, mk2_bits - 1);
-    *window = u128_rshift(*window, 1);
-    *window = u128_add(*window, mask);
+    *window = u128_add(u128_rshift(*window, 1), u128_lshift(bit, mk2_bits - 1));
 }
 
 /* 
@@ -184,4 +207,16 @@ void mk2_window_rev(u128 *window, const bits_t b)
 
     u128 mask = u128_sub(u128_lshift(U128_ONE, mk2_bits), U128_ONE);
     *window = u128_add(u128_and(u128_lshift(*window, 1), mask), bit);
+}
+
+void print_bits(unsigned int num, int bit_count) {
+
+    bit_count %= 32;
+
+    // Start from the most significant bit and go to the least significant bit
+    for (int i = bit_count; i > 0; --i) {
+        unsigned int bit = (num >> i) & 0x1;
+        printf("%u", bit);
+    }
+    printf("\n"); // New line after printing all bits
 }
