@@ -18,7 +18,7 @@ struct sub_lfsr {
 
 struct mk2_timecode {
     struct sub_lfsr lfsr[2];
-    int current; // Index of the LFSR currently in use
+    int current_lfsr; // Index of the LFSR currently in use
 };
 
 void mk2_lfsr_init(struct mk2_timecode *lfsr);

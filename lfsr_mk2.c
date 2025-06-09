@@ -39,7 +39,7 @@ void mk2_lfsr_init(struct mk2_timecode *lfsr)
     sub_lfsr_init(&lfsr->lfsr[0], 2, 0);
     sub_lfsr_init(&lfsr->lfsr[1], 1, 1);
 
-    lfsr->current = 0;
+    lfsr->current_lfsr = 0;
 }
 
 /*
@@ -70,14 +70,14 @@ void mk2_lfsr_fwd(struct mk2_timecode *lfsr, bits_t taps, bits_t bits)
         return;
     }
 
-    struct sub_lfsr *current = &lfsr->lfsr[lfsr->current];
+    struct sub_lfsr *current = &lfsr->lfsr[lfsr->current_lfsr];
 
     current->idx++;
 
     if (current->idx > current->idx_max) {
         fwd(current->timecode, taps, bits);
         current->idx = 0;
-        lfsr->current = !lfsr->current;
+        lfsr->current_lfsr = !lfsr->current_lfsr;
     }
 }
 
@@ -93,11 +93,11 @@ void mk2_lfsr_rev(struct mk2_timecode *lfsr, bits_t taps, bits_t bits)
         return;
     }
 
-    struct sub_lfsr *current = &lfsr->lfsr[lfsr->current];
-    struct sub_lfsr *other = &lfsr->lfsr[!lfsr->current];
+    struct sub_lfsr *current = &lfsr->lfsr[lfsr->current_lfsr];
+    struct sub_lfsr *other = &lfsr->lfsr[!lfsr->current_lfsr];
 
     if (current->idx == 0) {
-        lfsr->current = !lfsr->current;
+        lfsr->current_lfsr = !lfsr->current_lfsr;
         other->idx = other->idx_max;
         rev(other->timecode, taps, bits);
     } else {
@@ -141,7 +141,7 @@ slot_no_t mk2_compute_actual_slot(struct mk2_timecode *lfsr)
     static const slot_no_t multiplier = 5; // Base multiplication by five to reconstruct slot
     static const slot_no_t offset = 3; // The secondary LFSR has a fixed offset of 3
 
-    if (!lfsr->current)
+    if (!lfsr->current_lfsr)
         return (lfsr->lfsr[0].slot * multiplier) + lfsr->lfsr[0].idx;
     else
         return ((lfsr->lfsr[1].slot - 1) * multiplier) + offset + lfsr->lfsr[1].idx;

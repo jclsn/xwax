@@ -44,7 +44,7 @@ struct timecode_def {
     unsigned int length, /* in cycles */
         safe; /* last 'safe' timecode number (for auto disconnect) */
     bool lookup; /* true if lut has been generated */
-    struct lut lut, lut2;
+    struct lut lut[2];
 };
 
 struct timecoder_channel_mk2 {
@@ -118,6 +118,7 @@ struct timecoder {
 
     /* MK2 quirks */
     struct timecoder_mk2 upper, lower;
+    struct timecoder_mk2* current_subcode;
 };
 
 struct timecode_def* timecoder_find_definition(const char *name);
