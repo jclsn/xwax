@@ -63,12 +63,28 @@ static inline u128 u128_or(u128 a, u128 b) {
 }
 
 static inline u128 u128_not(u128 a) {
-	return (a.low == 0 && a.high == 0) ? U128_ONE : U128_ZERO;
+    return (a.low == 0 && a.high == 0) ? U128_ONE : U128_ZERO;
 }
 
 // Print a u128 value in hexadecimal format (lowercase).
 static inline void u128_print(u128 a) {
     printf("%016llx%016llx\n", (unsigned long long)a.high, (unsigned long long)a.low);
+}
+
+// Print the highest `bits` bits of a u128 in binary (MSB first).
+static inline void u128_print_bits(u128 a, int bits) {
+    if (bits < 1 || bits > 128) {
+        printf("Invalid bit count: %d\n", bits);
+        return;
+    }
+
+    for (int i = bits - 1; i >= 0; --i) {
+        int is_high = i >= 64;
+        int bit_index = is_high ? i - 64 : i;
+        uint64_t source = is_high ? a.high : a.low;
+        printf("%d", (int)((source >> bit_index) & 1));
+    }
+    printf("\n");
 }
 
 #endif /* end of include guard TYPES_H */

@@ -592,7 +592,7 @@ static void demodulate_bit(struct timecoder *tc, struct timecoder_mk2 *sc, signe
  * Process the upper or lower timecode
  */
 
-static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, signed int reading)
+static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, signed int reading, bits_t other_bitstream)
 {
     demodulate_bit(tc, sc, reading);
 
@@ -604,17 +604,23 @@ static void process_timecode(struct timecoder *tc, struct timecoder_mk2 *sc, sig
         mk2_lfsr_rev(&sc->mk2_timecode, tc->def->taps, tc->def->bits);
     }
 
-    sc->bitstream = mk2_lfsr_decimate(sc->decimation_window);
-    sc->timecode = &sc->mk2_timecode.lfsr[sc->mk2_timecode.current_lfsr].timecode;
+    struct sub_lfsr *current_lfsr = &sc->mk2_timecode.lfsr[sc->mk2_timecode.current_lfsr];
+    struct sub_lfsr *other_lfsr = &sc->mk2_timecode.lfsr[!sc->mk2_timecode.current_lfsr];
 
-    /* u128_print(sc->decimation_window); */
-    /* printf("bitstream: %x\n", sc->bitstream); */
-    /* printf("timecode: %x\n\n", *sc->timecode); */
+    sc->bitstream = mk2_lfsr_decimate(sc->decimation_window);
+    sc->timecode = &current_lfsr->timecode;
+    sc->backup_timecode = mk2_flip(other_bitstream);
 
     if (*sc->timecode == sc->bitstream) {
-        (sc->valid_counter)++;
-    } else {
+        sc->valid_counter++;
+    } /*else if(*sc->timecode == sc->backup_timecode) {
+        sc->valid_counter++;
+        *sc->timecode = sc->backup_timecode;
+    }*/else {
         *sc->timecode = sc->bitstream;
+        other_lfsr->timecode = fwd(sc->backup_timecode, tc->def->taps, tc->def->bits);
+        /* other_lfsr->timecode = fwd(other_lfsr->last_valid_timecode, tc->def->taps, tc->def->bits); */
+        /* other_lfsr->timecode = fwd(other_bitstream, tc->def->taps, tc->def->bits); */
         mk2_lfsr_reset(&sc->mk2_timecode);
         sc->valid_counter = 0;
     }
@@ -630,10 +636,32 @@ static void process_bitstreams(struct timecoder *tc, signed int reading) {
      * Detect if the offset jumps on upper and lower bitstream. 
      */
 
-    if (tc->secondary.positive)
-        process_timecode(tc, &tc->upper, reading);
-    else if (!tc->secondary.positive)
-        process_timecode(tc, &tc->lower, reading);
+    if (tc->secondary.positive) {
+        process_timecode(tc, &tc->upper, reading, mk2_lfsr_decimate(tc->lower.decimation_window));
+        /* u128_print_bits(tc->upper.decimation_window, 110); */
+        printf("\x1b[32m UPPER \x1b[0m");
+        /* if (tc->upper.mk2_timecode.current_lfsr == 0) */
+        /*     printf("\x1b[31m lfsr: %u, idx: %zd, ", tc->upper.mk2_timecode.current_lfsr, tc->upper.mk2_timecode.lfsr[tc->upper.mk2_timecode.current_lfsr].idx); */
+        /* else */ 
+        /*     printf("\x1b[34m lfsr: %u, idx: %zd, ", tc->upper.mk2_timecode.current_lfsr, tc->upper.mk2_timecode.lfsr[tc->upper.mk2_timecode.current_lfsr].idx); */
+        print_bits(tc->upper.bitstream, 22);
+        printf("\x1b[0m");
+
+        /* printf("bitstream: "); */
+        /* print_bits(tc->upper.bitstream, 22); */
+        /* printf("timecode:  "); */
+        /* print_bits(*tc->upper.timecode, 22); */
+        /* printf("\n"); */
+    } else if (!tc->secondary.positive) {
+        process_timecode(tc, &tc->lower, reading, mk2_lfsr_decimate(tc->upper.decimation_window));
+        printf("\x1b[33m LOWER \x1b[0m");
+        /* if (tc->lower.mk2_timecode.current_lfsr == 0) */
+        /*     printf("\x1b[31m lfsr: %u, idx: %zd, ", tc->lower.mk2_timecode.current_lfsr, tc->lower.mk2_timecode.lfsr[tc->lower.mk2_timecode.current_lfsr].idx); */
+        /* else */ 
+        /*     printf("\x1b[34m lfsr: %u, idx: %zd, ", tc->lower.mk2_timecode.current_lfsr, tc->lower.mk2_timecode.lfsr[tc->lower.mk2_timecode.current_lfsr].idx); */
+        print_bits(mk2_flip(tc->lower.bitstream), 22);
+        printf("\x1b[0m");
+    }
 
     /* 
      * When the signal is flipped, the negative half-cycle is on the positive side and vice versa. 
@@ -643,17 +671,17 @@ static void process_bitstreams(struct timecoder *tc, signed int reading) {
 
     if (tc->lower.valid_counter > tc->upper.valid_counter) {
         /* printf("actual_slot: %u\n", mk2_compute_actual_slot(&tc->lower.mk2_timecode)); */
-        tc->bitstream = tc->lower.bitstream;
-        tc->timecode = *tc->lower.timecode;
-        tc->current_subcode = &tc->lower;
+        /* tc->bitstream = tc->lower.bitstream; */
+        /* tc->timecode = *tc->lower.timecode; */
+        /* tc->current_subcode = &tc->lower; */
     } else {
         /* printf("actual_slot: %u\n", mk2_compute_actual_slot(&tc->upper.mk2_timecode)); */
         tc->bitstream = tc->upper.bitstream;
         tc->timecode = *tc->upper.timecode;
         tc->current_subcode = &tc->upper;
     }
-    if (tc->timecode == tc->bitstream) {
 
+    if (tc->timecode == tc->bitstream) {
         tc->valid_counter++;
     } else {
         tc->timecode = tc->bitstream;
@@ -935,13 +963,13 @@ signed int timecoder_get_position(struct timecoder *tc, double *when)
     if (tc->valid_counter <= VALID_BITS)
         return -1;
 
-    if (tc->def->flags & TRAKTOR_MK2 && tc->current_subcode->mk2_timecode.current_lfsr == 0) {
-        /* tc->current->mk2_timecode.lfsr[tc->current->mk2_timecode.current].slot = lut_lookup(&tc->def->lut[tc->current->mk2_timecode.current], tc->bitstream); */
-        /* r = mk2_compute_actual_slot(&tc->current->mk2_timecode); */
-        /* printf("r: %d\n", r); */
-        /* printf("slot: %d\n", tc->current->mk2_timecode.lfsr[tc->current->mk2_timecode.current].slot); */
-
+    if (tc->def->flags & TRAKTOR_MK2) {
         r = lut_lookup(&tc->def->lut[0], tc->bitstream);
+        /* r = lut_lookup(&tc->def->lut[tc->current_subcode->mk2_timecode.current_lfsr], tc->bitstream); */
+        /* if (r > 0) */
+        /*     printf("r: %d\n", r); */
+
+        /* r = lut_lookup(&tc->def->lut[0], tc->bitstream); */
     } else {
         r = lut_lookup(&tc->def->lut[0], tc->bitstream);
     }
@@ -949,6 +977,8 @@ signed int timecoder_get_position(struct timecoder *tc, double *when)
         return -1;
 
 
+    /* if (tc->def->flags & TRAKTOR_MK2) */
+    /*     r = mk2_compute_actual_slot2(&tc->current_subcode->mk2_timecode, r); */
 
     if (when)
         *when = tc->timecode_ticker * tc->dt;

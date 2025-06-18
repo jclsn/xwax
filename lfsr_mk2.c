@@ -172,6 +172,24 @@ slot_no_t mk2_compute_actual_slot(struct mk2_timecode *lfsr)
         return ((lfsr->lfsr[1].slot - 1) * multiplier) + offset + lfsr->lfsr[1].idx;
 }
 
+slot_no_t mk2_compute_actual_slot2(struct mk2_timecode *lfsr, slot_no_t slot)
+{
+    if (!lfsr) {
+        errno = EINVAL;
+        perror(__func__);
+        return -1;
+    }
+
+    static const slot_no_t multiplier = 5; // Base multiplication by five to reconstruct slot
+    static const slot_no_t offset = 3; // The secondary LFSR has a fixed offset of 3
+
+    if (!lfsr->current_lfsr)
+        return (slot * multiplier) + lfsr->lfsr[0].idx;
+    else
+        return ((slot - 1) * multiplier) + offset + lfsr->lfsr[1].idx;
+}
+
+
 /* 
  * Appends the new bit to the 110-bit window
  */
@@ -214,9 +232,14 @@ void print_bits(unsigned int num, int bit_count) {
     bit_count %= 32;
 
     // Start from the most significant bit and go to the least significant bit
-    for (int i = bit_count; i > 0; --i) {
+    for (int i = bit_count - 1; i >= 0; --i) {
         unsigned int bit = (num >> i) & 0x1;
         printf("%u", bit);
     }
     printf("\n"); // New line after printing all bits
+}
+
+bits_t mk2_flip(bits_t timecode)
+{
+    return ~timecode & 0x003fffff;
 }

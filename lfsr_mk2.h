@@ -14,6 +14,7 @@ struct sub_lfsr {
     ssize_t idx;
     ssize_t idx_max;
     bits_t timecode;
+    bits_t last_valid_timecode;
 };
 
 struct mk2_timecode {
@@ -26,11 +27,15 @@ void mk2_lfsr_fwd(struct mk2_timecode *lfsr, bits_t taps, bits_t bits);
 void mk2_lfsr_rev(struct mk2_timecode *lfsr, bits_t taps, bits_t bits);
 void mk2_lfsr_reset(struct mk2_timecode *lfsr);
 bits_t mk2_lfsr_decimate(u128 window);
+void mk2_lfsr_print(struct mk2_timecode *lfsr);
+bits_t mk2_flip(bits_t timecode);
 
 void mk2_window_fwd(u128 *window, const bits_t b);
 void mk2_window_rev(u128 *window, const bits_t b);
 
 slot_no_t mk2_compute_actual_slot(struct mk2_timecode *lfsr);
+slot_no_t mk2_compute_actual_slot2(struct mk2_timecode *lfsr, slot_no_t slot);
 
+void print_bits(unsigned int num, int bit_count);
 #endif /* end of include guard LFSR_MK2_H */
 
