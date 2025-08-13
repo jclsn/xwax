@@ -329,7 +329,7 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->forwards = 1;
     init_channel(&tc->primary);
     init_channel(&tc->secondary);
-    pitch_init(&tc->pitch, tc->dt);
+    pitch_init(&tc->pitch, tc->dt, 1e-7, 10.0, 1e-1, 1e-4, 8e-4);
 
     tc->ref_level = INT_MAX;
     tc->bitstream = 0;
