@@ -492,7 +492,12 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
     tc->forwards = 1;
     init_channel(tc->def, &tc->primary);
     init_channel(tc->def, &tc->secondary);
-    pitch_init(&tc->pitch, tc->dt);
+    pitch_init(&tc->pitch, tc->dt,
+            /* stable mode */ 1e-8, 5.0,
+            /* medium mode */ 1e-2, 1e-3,
+            /* scratch mode  */ 1e-1, 1e-4,
+            /* medium threshold  */ 40e-5,
+            /* scratch threshold  */ 15e-4);
 
     tc->ref_level = INT_MAX;
     tc->bitstream = 0;
