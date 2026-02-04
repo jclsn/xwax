@@ -445,7 +445,7 @@ static void init_mk2_channel(struct timecoder_channel *ch)
 
     delayline_init(&ch->mk2.delayline);
 
-    ema_init(&ch->mk2.ema_filter, 3e-1);
+    ema_init(&ch->mk2.ema_filter, 7e-1);
     derivative_init(&ch->mk2.differentiator);
     rms_init(&ch->mk2.rms_filter, 1e-3);
     rms_init(&ch->mk2.rms_deriv_filter, 1e-3);
@@ -857,7 +857,7 @@ static void process_sample(struct timecoder *tc,
     if (tc->def->flags & TRAKTOR_MK2) {
         if (tc->secondary.swapped)
         {
-            int reading = *delayline_at(&tc->secondary.mk2.delayline, 3);
+            int reading = *delayline_at(&tc->secondary.mk2.delayline, 1);
             mk2_process_bitstream(tc, reading);
         }
     } else {
